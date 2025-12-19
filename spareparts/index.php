@@ -102,8 +102,9 @@ include '../header.php';
                         </div>
                         <div class="col-md-4">
                             <div class="mb-3">
-                                <label for="harga_beli_default" class="form-label">Harga Beli Default</label>
-                                <input type="number" step="0.01" class="form-control" id="harga_beli_default" name="harga_beli_default" value="0">
+                                <label for="harga_beli_default" class="form-label">Harga Beli (Moving Average)</label>
+                                <input type="number" step="0.01" class="form-control" id="harga_beli_default" name="harga_beli_default" value="0" readonly>
+                                <small class="text-muted">Otomatis dihitung dari pembelian</small>
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -190,8 +191,12 @@ function displaySpareparts(spareparts) {
         html = '<tr><td colspan="9" class="text-center">Belum ada data sparepart</td></tr>';
     } else {
         spareparts.forEach(function(sp) {
-            let stockClass = sp.current_stock <= sp.min_stock ? 'text-danger fw-bold' : '';
-            let stockIcon = sp.current_stock <= sp.min_stock ? '<i class="fas fa-exclamation-triangle text-warning"></i> ' : '';
+            // Konversi ke integer untuk perbandingan yang benar
+            let currentStock = parseInt(sp.current_stock);
+            let minStock = parseInt(sp.min_stock);
+            
+            let stockClass = currentStock <= minStock ? 'text-danger fw-bold' : '';
+            let stockIcon = currentStock <= minStock ? '<i class="fas fa-exclamation-triangle text-warning"></i> ' : '';
             
             html += `
                 <tr>
@@ -201,8 +206,8 @@ function displaySpareparts(spareparts) {
                     <td>${sp.satuan}</td>
                     <td>Rp ${formatNumber(sp.harga_beli_default)}</td>
                     <td>Rp ${formatNumber(sp.harga_jual_default)}</td>
-                    <td class="${stockClass}">${stockIcon}${sp.current_stock}</td>
-                    <td>${sp.min_stock}</td>
+                    <td class="${stockClass}">${stockIcon}${currentStock}</td>
+                    <td>${minStock}</td>
                     <td>
                         <button class="btn btn-warning btn-sm" onclick="editSparepart(${sp.id})">
                             <i class="fas fa-edit"></i>

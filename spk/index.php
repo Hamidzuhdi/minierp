@@ -276,12 +276,14 @@ function displaySPKs(spks) {
                                 Status
                             </button>
                             <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Disetujui')">Disetujui</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Dalam Pengerjaan')">Dalam Pengerjaan</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Selesai')">Selesai</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Dikirim ke Admin')">Dikirim ke Admin</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Menunggu Konfirmasi'); return false;">Menunggu Konfirmasi</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Disetujui'); return false;">Disetujui</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Dalam Pengerjaan'); return false;">Dalam Pengerjaan</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Selesai'); return false;">Selesai</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Dikirim ke Admin'); return false;">Dikirim ke Admin</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Buat Invoice'); return false;">Buat Invoice</a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item text-danger" href="#" onclick="deleteSPK(${spk.id})">Hapus SPK</a></li>
+                                <li><a class="dropdown-item text-danger" href="#" onclick="deleteSPK(${spk.id}); return false;">Hapus SPK</a></li>
                             </ul>
                         </div>
                     </td>

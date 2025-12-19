@@ -178,14 +178,40 @@ elseif ($action === 'update_status') {
         
         // Update stock based on status change
         if ($new_status === 'Approved' && $old_status !== 'Approved') {
-            // APPROVE: Tambah stock
+            // APPROVE: Tambah stock dan update harga beli dengan moving average
             foreach ($items as $item) {
+                // Get purchase item dengan harga beli
+                $sql_get_price = "SELECT harga_beli FROM purchase_items 
+                                  WHERE purchase_id = $id AND sparepart_id = " . (int)$item['sparepart_id'];
+                $result_price = mysqli_query($conn, $sql_get_price);
+                $price_data = mysqli_fetch_assoc($result_price);
+                $harga_beli_baru = (float)$price_data['harga_beli'];
+                
+                // Get current stock dan harga beli lama
+                $sql_get_current = "SELECT current_stock, harga_beli_default 
+                                   FROM spareparts WHERE id = " . (int)$item['sparepart_id'];
+                $result_current = mysqli_query($conn, $sql_get_current);
+                $current_data = mysqli_fetch_assoc($result_current);
+                $qty_lama = (int)$current_data['current_stock'];
+                $harga_lama = (float)$current_data['harga_beli_default'];
+                $qty_baru = (int)$item['qty'];
+                
+                // Hitung moving average
+                // Formula: (qty_lama × harga_lama) + (qty_baru × harga_beli_baru) / (qty_lama + qty_baru)
+                if (($qty_lama + $qty_baru) > 0) {
+                    $moving_average = (($qty_lama * $harga_lama) + ($qty_baru * $harga_beli_baru)) / ($qty_lama + $qty_baru);
+                } else {
+                    $moving_average = $harga_beli_baru;
+                }
+                
+                // Update stock dan harga beli
                 $sql_stock = "UPDATE spareparts 
-                             SET current_stock = current_stock + " . (int)$item['qty'] . " 
+                             SET current_stock = current_stock + $qty_baru,
+                                 harga_beli_default = $moving_average
                              WHERE id = " . (int)$item['sparepart_id'];
                 mysqli_query($conn, $sql_stock);
             }
-            $message = 'Purchase berhasil di-approve dan stock telah ditambahkan';
+            $message = 'Purchase berhasil di-approve, stock dan harga beli telah diupdate';
         }
         elseif ($new_status === 'Refund' && $old_status === 'Approved') {
             // REFUND dari Approved: Kurangi stock
