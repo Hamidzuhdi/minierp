@@ -201,7 +201,7 @@ elseif ($action === 'update_status') {
     $status = $_POST['status'];
     
     // Validasi status
-    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Admin', 'Buat Invoice'];
+    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke owner', 'Buat Invoice'];
     if (!in_array($status, $valid_statuses)) {
         echo json_encode(['success' => false, 'message' => 'Status tidak valid']);
         exit;

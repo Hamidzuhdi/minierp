@@ -89,8 +89,8 @@ $is_owner = ($user_role === 'Owner');
                     
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label for="supplier" class="form-label">Supplier *</label>
-                            <input type="text" class="form-control" id="supplier" name="supplier" required>
+                            <label for="supplier" class="form-label">Supplier <?php echo $is_owner ? '*' : '(Opsional)'; ?></label>
+                            <input type="text" class="form-control" id="supplier" name="supplier" <?php echo $is_owner ? 'required' : ''; ?> placeholder="<?php echo $is_owner ? 'Nama supplier' : 'Akan diisi owner'; ?>">
                         </div>
                         <div class="col-md-6">
                             <label for="tanggal" class="form-label">Tanggal *</label>
@@ -151,6 +151,56 @@ $is_owner = ($user_role === 'Owner');
         </div>
     </div>
 </div>
+
+<!-- Modal Edit Purchase (Owner Only) -->
+<?php if ($is_owner): ?>
+<div class="modal fade" id="editPurchaseModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Purchase - Isi Supplier & Harga</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editPurchaseForm">
+                <div class="modal-body">
+                    <input type="hidden" id="edit_purchase_id" name="purchase_id">
+                    <input type="hidden" name="action" value="update_purchase">
+                    
+                    <div class="mb-3">
+                        <label for="edit_supplier" class="form-label">Supplier *</label>
+                        <input type="text" class="form-control" id="edit_supplier" name="supplier" required>
+                    </div>
+                    
+                    <hr>
+                    <h6>Item Pembelian</h6>
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Sparepart</th>
+                                <th>Qty</th>
+                                <th>Harga Beli</th>
+                                <th>Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="editItemsTableBody">
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3" class="text-end"><strong>TOTAL:</strong></td>
+                                <td><strong id="editGrandTotal">Rp 0</strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Update Purchase</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php include '../footer.php'; ?>
 
@@ -250,7 +300,12 @@ function displayPurchases(purchases) {
                         <button class="btn btn-info btn-sm" onclick="viewDetail(${p.id})" title="Detail">
                             <i class="fas fa-eye"></i>
                         </button>
-                        ${p.status === 'Pending Approval' ? `
+                        ${isOwner && (p.supplier === 'Pending - Akan diisi Owner' || !p.supplier) ? `
+                        <button class="btn btn-warning btn-sm" onclick="editPurchase(${p.id})" title="Isi Supplier & Harga">
+                            <i class="fas fa-edit"></i> Isi Data
+                        </button>
+                        ` : ''}
+                        ${!isOwner && p.status === 'Pending Approval' ? `
                         <button class="btn btn-success btn-sm" onclick="updateStatus(${p.id}, 'Approved')" title="Approve">
                             <i class="fas fa-check"></i>
                         </button>
@@ -258,14 +313,14 @@ function displayPurchases(purchases) {
                             <i class="fas fa-trash"></i>
                         </button>
                         ` : ''}
+                        ${isOwner && p.status === 'Approved' && p.is_paid === 'Belum Bayar' ? `
+                        <button class="btn btn-primary btn-sm" onclick="updatePayment(${p.id}, 'Sudah Bayar')" title="Tandai Sudah Bayar">
+                            <i class="fas fa-money-bill"></i>
+                        </button>
+                        ` : ''}
                         ${p.status === 'Approved' ? `
                         <button class="btn btn-warning btn-sm" onclick="updateStatus(${p.id}, 'Refund')" title="Refund">
                             <i class="fas fa-undo"></i>
-                        </button>
-                        ` : ''}
-                        ${p.is_paid === 'Belum Bayar' ? `
-                        <button class="btn btn-primary btn-sm" onclick="updatePayment(${p.id}, 'Sudah Bayar')" title="Tandai Sudah Bayar">
-                            <i class="fas fa-money-bill"></i>
                         </button>
                         ` : ''}
                     </td>
@@ -485,6 +540,85 @@ function viewDetail(id) {
         }
     });
 }
+
+// Edit Purchase (Owner only) - Isi supplier dan harga
+function editPurchase(id) {
+    $.ajax({
+        url: 'backend.php?action=read_one&id=' + id,
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                let p = response.data;
+                $('#edit_purchase_id').val(p.id);
+                $('#edit_supplier').val(p.supplier === 'Pending - Akan diisi Owner' ? '' : p.supplier);
+                
+                let itemsHtml = '';
+                let total = 0;
+                p.items.forEach(function(item, index) {
+                    let subtotal = item.qty * item.harga_beli;
+                    total += subtotal;
+                    itemsHtml += `
+                        <tr>
+                            <td>
+                                ${item.sparepart_name}
+                                <input type="hidden" name="items[${index}][sparepart_id]" value="${item.sparepart_id}">
+                            </td>
+                            <td>
+                                ${item.qty}
+                                <input type="hidden" name="items[${index}][qty]" value="${item.qty}">
+                            </td>
+                            <td>
+                                <input type="number" step="0.01" class="form-control edit-item-price" name="items[${index}][harga_beli]" value="${item.harga_beli}" min="0" required onchange="calculateEditSubtotal()">
+                            </td>
+                            <td>
+                                <strong class="edit-item-subtotal">Rp ${formatNumber(subtotal)}</strong>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                $('#editItemsTableBody').html(itemsHtml);
+                $('#editGrandTotal').text('Rp ' + formatNumber(total));
+                $('#editPurchaseModal').modal('show');
+            }
+        }
+    });
+}
+
+// Calculate subtotal di edit modal
+function calculateEditSubtotal() {
+    let total = 0;
+    $('.edit-item-price').each(function(index) {
+        let price = parseFloat($(this).val()) || 0;
+        let qty = parseInt($('input[name="items[' + index + '][qty]"]').val()) || 0;
+        let subtotal = qty * price;
+        total += subtotal;
+        $('.edit-item-subtotal').eq(index).text('Rp ' + formatNumber(subtotal));
+    });
+    $('#editGrandTotal').text('Rp ' + formatNumber(total));
+}
+
+// Submit edit purchase form
+$('#editPurchaseForm').on('submit', function(e) {
+    e.preventDefault();
+    
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: $(this).serialize(),
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                $('#editPurchaseModal').modal('hide');
+                loadPurchases();
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
+});
 
 // Update status (Approve/Refund)
 function updateStatus(id, status) {

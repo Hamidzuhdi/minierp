@@ -9,7 +9,19 @@ if (!isset($_SESSION['user_id'])) {
 
 $page_title = "Manajemen SPK";
 include '../header.php';
+
+// Cek role untuk hide/show harga
+$user_role = $_SESSION['role'] ?? 'Admin';
+$is_owner = ($user_role === 'Owner');
 ?>
+
+<?php if (!$is_owner): ?>
+<style>
+    .sparepart-price-column {
+        display: none !important;
+    }
+</style>
+<?php endif; ?>
 
 <div class="container-fluid py-4">
     <div class="row">
@@ -33,7 +45,7 @@ include '../header.php';
                                 <option value="Disetujui">Disetujui</option>
                                 <option value="Dalam Pengerjaan">Dalam Pengerjaan</option>
                                 <option value="Selesai">Selesai</option>
-                                <option value="Dikirim ke Admin">Dikirim ke Admin</option>
+                                <option value="Dikirim ke owner">Dikirim ke owner</option>
                                 <option value="Buat Invoice">Buat Invoice</option>
                             </select>
                         </div>
@@ -171,6 +183,9 @@ include '../header.php';
 <?php include '../footer.php'; ?>
 
 <script>
+const userRole = '<?php echo $_SESSION['role'] ?? 'Admin'; ?>';
+const isOwner = (userRole === 'Owner');
+
 $(document).ready(function() {
     loadSPKs();
     loadCustomers();
@@ -282,8 +297,8 @@ function displaySPKs(spks) {
                                 <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Disetujui')">Disetujui</a></li>
                                 <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dalam Pengerjaan')">Dalam Pengerjaan</a></li>
                                 <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Selesai')">Selesai</a></li>
-                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dikirim ke Admin')">Dikirim ke Admin</a></li>
-                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Buat Invoice')">Buat Invoice</a></li>
+                                ${!isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dikirim ke owner')">Dikirim ke owner</a></li>` : ''}
+                                ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Buat Invoice')">Buat Invoice</a></li>` : ''}
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="deleteSPK(${spk.id})">Hapus SPK</a></li>
                             </ul>
@@ -318,7 +333,7 @@ function getStatusBadge(status) {
         'Disetujui': 'info',
         'Dalam Pengerjaan': 'primary',
         'Selesai': 'success',
-        'Dikirim ke Admin': 'secondary',
+        'Dikirim ke owner': 'secondary',
         'Buat Invoice': 'danger'
     };
     return `<span class="badge bg-${badges[status] || 'secondary'}">${status}</span>`;
@@ -387,7 +402,11 @@ function viewDetail(id) {
                     <h6>Sparepart yang Digunakan</h6>
                     <table class="table table-bordered table-sm">
                         <thead>
-                            <tr><th>Nama Sparepart</th><th>Qty</th><th>Harga</th><th>Subtotal</th></tr>
+                            <tr>
+                                <th>Nama Sparepart</th>
+                                <th>Qty</th>
+                                ${isOwner ? '<th>Harga</th><th>Subtotal</th>' : ''}
+                            </tr>
                         </thead>
                         <tbody>
                 `;
@@ -395,28 +414,53 @@ function viewDetail(id) {
                 let totalSparepart = 0;
                 if (spk.items && spk.items.length > 0) {
                     spk.items.forEach(function(item) {
-                        html += `
-                            <tr>
-                                <td>${item.sparepart_name}</td>
-                                <td>${item.qty} ${item.satuan}</td>
-                                <td>Rp ${formatNumber(item.harga_satuan)}</td>
-                                <td>Rp ${formatNumber(item.subtotal)}</td>
-                            </tr>
-                        `;
+                        if (isOwner) {
+                            html += `
+                                <tr>
+                                    <td>${item.sparepart_name}</td>
+                                    <td>${item.qty} ${item.satuan}</td>
+                                    <td>Rp ${formatNumber(item.harga_satuan)}</td>
+                                    <td>Rp ${formatNumber(item.subtotal)}</td>
+                                </tr>
+                            `;
+                        } else {
+                            html += `
+                                <tr>
+                                    <td>${item.sparepart_name}</td>
+                                    <td>${item.qty} ${item.satuan}</td>
+                                </tr>
+                            `;
+                        }
                         totalSparepart += parseFloat(item.subtotal);
                     });
                 } else {
-                    html += '<tr><td colspan="4" class="text-center">Belum ada sparepart</td></tr>';
+                    html += `<tr><td colspan="${isOwner ? '4' : '2'}" class="text-center">Belum ada sparepart</td></tr>`;
                 }
                 
                 html += `
-                        </tbody>
+                        </tbody>`;
+                
+                // Tampilkan footer hanya untuk Owner
+                if (isOwner) {
+                    html += `
                         <tfoot>
                             <tr><th colspan="3">Total Sparepart:</th><th>Rp ${formatNumber(totalSparepart)}</th></tr>
                             <tr><th colspan="3">Biaya Jasa:</th><th>Rp ${formatNumber(spk.biaya_jasa)}</th></tr>
                             <tr><th colspan="3">GRAND TOTAL:</th><th><strong>Rp ${formatNumber(totalSparepart + parseFloat(spk.biaya_jasa))}</strong></th></tr>
                         </tfoot>
+                    `;
+                }
+                
+                html += `
                     </table>
+                    
+                    ${isOwner && spk.status_spk === 'Buat Invoice' ? `
+                    <div class="mb-3">
+                        <button class="btn btn-success" onclick="downloadInvoicePDF(${spk.id})">
+                            <i class="fas fa-file-pdf"></i> Download Invoice PDF
+                        </button>
+                    </div>
+                    ` : ''}
                     
                     <hr>
                     
@@ -509,12 +553,24 @@ function updateStatus(id, status) {
                 if (response.success) {
                     showAlert('success', response.message);
                     loadSPKs();
+                    
+                    // Jika status diubah ke "Buat Invoice", langsung download PDF
+                    if (status === 'Buat Invoice') {
+                        setTimeout(function() {
+                            downloadInvoicePDF(id);
+                        }, 1000);
+                    }
                 } else {
                     showAlert('danger', response.message);
                 }
             }
         });
     }
+}
+
+// Download Invoice PDF
+function downloadInvoicePDF(spkId) {
+    window.open('generate_invoice_pdf.php?spk_id=' + spkId, '_blank');
 }
 
 function deleteSPK(id) {

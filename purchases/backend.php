@@ -14,18 +14,29 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 // CREATE - Tambah Purchase Baru
 if ($action === 'create') {
-    $supplier = trim($_POST['supplier']);
+    $supplier = trim($_POST['supplier'] ?? '');
     $tanggal = $_POST['tanggal'];
     $items = json_decode($_POST['items'], true);
-    
-    if (empty($supplier) || empty($tanggal) || empty($items)) {
-        echo json_encode(['success' => false, 'message' => 'Data tidak lengkap']);
-        exit;
-    }
     
     // Cek role user
     $user_role = $_SESSION['role'] ?? 'Admin';
     $is_owner = ($user_role === 'Owner');
+    
+    // Validasi: Owner wajib isi supplier
+    if ($is_owner && empty($supplier)) {
+        echo json_encode(['success' => false, 'message' => 'Supplier wajib diisi']);
+        exit;
+    }
+    
+    if (empty($tanggal) || empty($items)) {
+        echo json_encode(['success' => false, 'message' => 'Data tidak lengkap']);
+        exit;
+    }
+    
+    // Set supplier default jika kosong (dari Admin)
+    if (empty($supplier)) {
+        $supplier = 'Pending - Akan diisi Owner';
+    }
     
     // Hitung total
     $total = 0;
@@ -155,6 +166,65 @@ elseif ($action === 'get_spareparts') {
     }
     
     echo json_encode(['success' => true, 'data' => $spareparts]);
+}
+
+// UPDATE PURCHASE - Owner isi supplier dan harga
+elseif ($action === 'update_purchase') {
+    $purchase_id = (int)$_POST['purchase_id'];
+    $supplier = trim($_POST['supplier']);
+    
+    // Cek role harus owner
+    $user_role = $_SESSION['role'] ?? 'Admin';
+    if ($user_role !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa update purchase ini']);
+        exit;
+    }
+    
+    if (empty($supplier)) {
+        echo json_encode(['success' => false, 'message' => 'Supplier wajib diisi']);
+        exit;
+    }
+    
+    // Get items from POST
+    $items = $_POST['items'] ?? [];
+    if (empty($items)) {
+        echo json_encode(['success' => false, 'message' => 'Items tidak boleh kosong']);
+        exit;
+    }
+    
+    // Hitung total baru
+    $total = 0;
+    foreach ($items as $item) {
+        $total += (int)$item['qty'] * (float)$item['harga_beli'];
+    }
+    
+    // Start transaction
+    mysqli_begin_transaction($conn);
+    
+    try {
+        // Update purchase header
+        $sql_update = "UPDATE purchases SET 
+                      supplier = '" . mysqli_real_escape_string($conn, $supplier) . "',
+                      total = $total
+                      WHERE id = $purchase_id";
+        mysqli_query($conn, $sql_update);
+        
+        // Update purchase items harga
+        foreach ($items as $item) {
+            $sql_item = "UPDATE purchase_items SET 
+                        harga_beli = " . (float)$item['harga_beli'] . "
+                        WHERE purchase_id = $purchase_id 
+                        AND sparepart_id = " . (int)$item['sparepart_id'];
+            mysqli_query($conn, $sql_item);
+        }
+        
+        mysqli_commit($conn);
+        echo json_encode(['success' => true, 'message' => 'Purchase berhasil diupdate']);
+        
+    } catch (Exception $e) {
+        mysqli_rollback($conn);
+        echo json_encode(['success' => false, 'message' => 'Gagal update purchase: ' . $e->getMessage()]);
+    }
 }
 
 // UPDATE STATUS - Approve/Refund dengan update stock
