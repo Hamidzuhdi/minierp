@@ -249,6 +249,8 @@ function loadVehicles(customerId) {
 function displaySPKs(spks) {
     let html = '';
     
+    console.log('Total SPKs:', spks.length);
+    
     if (spks.length === 0) {
         html = '<tr><td colspan="7" class="text-center">Belum ada data SPK</td></tr>';
     } else {
@@ -271,19 +273,19 @@ function displaySPKs(spks) {
                         <button class="btn btn-warning btn-sm" onclick="openAnalisaModal(${spk.id})" title="Analisa Mekanik">
                             <i class="fas fa-wrench"></i>
                         </button>
-                        <div class="btn-group btn-group-sm">
-                            <button type="button" class="btn btn-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
                                 Status
                             </button>
                             <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Menunggu Konfirmasi'); return false;">Menunggu Konfirmasi</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Disetujui'); return false;">Disetujui</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Dalam Pengerjaan'); return false;">Dalam Pengerjaan</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Selesai'); return false;">Selesai</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Dikirim ke Admin'); return false;">Dikirim ke Admin</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="updateStatus(${spk.id}, 'Buat Invoice'); return false;">Buat Invoice</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Menunggu Konfirmasi')">Menunggu Konfirmasi</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Disetujui')">Disetujui</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dalam Pengerjaan')">Dalam Pengerjaan</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Selesai')">Selesai</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dikirim ke Admin')">Dikirim ke Admin</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Buat Invoice')">Buat Invoice</a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item text-danger" href="#" onclick="deleteSPK(${spk.id}); return false;">Hapus SPK</a></li>
+                                <li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="deleteSPK(${spk.id})">Hapus SPK</a></li>
                             </ul>
                         </div>
                     </td>
@@ -293,6 +295,21 @@ function displaySPKs(spks) {
     }
     
     $('#spkTableBody').html(html);
+    
+    // Re-initialize Bootstrap dropdowns after DOM update
+    setTimeout(function() {
+        try {
+            const dropdowns = document.querySelectorAll('[data-bs-toggle="dropdown"]');
+            dropdowns.forEach(function(dropdown) {
+                if (!bootstrap.Dropdown.getInstance(dropdown)) {
+                    new bootstrap.Dropdown(dropdown);
+                }
+            });
+            console.log('Initialized', dropdowns.length, 'dropdowns');
+        } catch (e) {
+            console.error('Error initializing dropdowns:', e);
+        }
+    }, 200);
 }
 
 function getStatusBadge(status) {

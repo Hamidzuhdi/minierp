@@ -10,7 +10,19 @@ if (!isset($_SESSION['user_id'])) {
 
 $page_title = "Manajemen Sparepart";
 include '../header.php';
+
+// Cek role untuk hide/show kolom harga
+$user_role = $_SESSION['role'] ?? 'Admin';
+$is_owner = ($user_role === 'Owner');
 ?>
+
+<?php if (!$is_owner): ?>
+<style>
+    .price-column {
+        display: none !important;
+    }
+</style>
+<?php endif; ?>
 
 <div class="container-fluid py-4">
     <div class="row">
@@ -44,8 +56,8 @@ include '../header.php';
                                     <th>Nama</th>
                                     <th>Barcode</th>
                                     <th>Satuan</th>
-                                    <th>Harga Beli</th>
-                                    <th>Harga Jual</th>
+                                    <th class="price-column">Harga Beli</th>
+                                    <th class="price-column">Harga Jual</th>
                                     <th>Stock</th>
                                     <th>Min Stock</th>
                                     <th>Aksi</th>
@@ -101,14 +113,14 @@ include '../header.php';
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <div class="mb-3">
+                            <div class="mb-3 price-column">
                                 <label for="harga_beli_default" class="form-label">Harga Beli (Moving Average)</label>
                                 <input type="number" step="0.01" class="form-control" id="harga_beli_default" name="harga_beli_default" value="0" readonly>
                                 <small class="text-muted">Otomatis dihitung dari pembelian</small>
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <div class="mb-3">
+                            <div class="mb-3 price-column">
                                 <label for="harga_jual_default" class="form-label">Harga Jual Default</label>
                                 <input type="number" step="0.01" class="form-control" id="harga_jual_default" name="harga_jual_default" value="0">
                             </div>
@@ -204,8 +216,8 @@ function displaySpareparts(spareparts) {
                     <td>${sp.nama}</td>
                     <td>${sp.barcode || '-'}</td>
                     <td>${sp.satuan}</td>
-                    <td>Rp ${formatNumber(sp.harga_beli_default)}</td>
-                    <td>Rp ${formatNumber(sp.harga_jual_default)}</td>
+                    <td class="price-column">Rp ${formatNumber(sp.harga_beli_default)}</td>
+                    <td class="price-column">Rp ${formatNumber(sp.harga_jual_default)}</td>
                     <td class="${stockClass}">${stockIcon}${currentStock}</td>
                     <td>${minStock}</td>
                     <td>

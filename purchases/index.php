@@ -10,7 +10,19 @@ if (!isset($_SESSION['user_id'])) {
 
 $page_title = "Manajemen Pembelian";
 include '../header.php';
+
+// Cek role untuk hide/show kolom harga
+$user_role = $_SESSION['role'] ?? 'Admin';
+$is_owner = ($user_role === 'Owner');
 ?>
+
+<?php if (!$is_owner): ?>
+<style>
+    .price-column {
+        display: none !important;
+    }
+</style>
+<?php endif; ?>
 
 <div class="container-fluid py-4">
     <div class="row">
@@ -43,7 +55,7 @@ include '../header.php';
                                     <th>ID</th>
                                     <th>Tanggal</th>
                                     <th>Supplier</th>
-                                    <th>Total</th>
+                                    <th class="price-column">Total</th>
                                     <th>Status</th>
                                     <th>Pembayaran</th>
                                     <th>Dibuat Oleh</th>
@@ -95,8 +107,8 @@ include '../header.php';
                                 <tr>
                                     <th width="40%">Sparepart</th>
                                     <th width="15%">Qty</th>
-                                    <th width="20%">Harga Beli</th>
-                                    <th width="20%">Subtotal</th>
+                                    <th width="20%" class="price-column">Harga Beli</th>
+                                    <th width="20%" class="price-column">Subtotal</th>
                                     <th width="5%">
                                         <button type="button" class="btn btn-success btn-sm" onclick="addItemRow()">
                                             <i class="fas fa-plus"></i>
@@ -145,6 +157,8 @@ include '../header.php';
 <script>
 let spareparts = [];
 let itemCounter = 0;
+const userRole = '<?php echo $_SESSION['role'] ?? 'Admin'; ?>';
+const isOwner = (userRole === 'Owner');
 
 // Load data saat halaman dimuat
 $(document).ready(function() {
@@ -228,7 +242,7 @@ function displayPurchases(purchases) {
                     <td>${p.id}</td>
                     <td>${formatDate(p.tanggal)}</td>
                     <td>${p.supplier}</td>
-                    <td>Rp ${formatNumber(p.total)}</td>
+                    <td class="price-column">Rp ${formatNumber(p.total)}</td>
                     <td>${statusBadge}</td>
                     <td>${paymentBadge}</td>
                     <td>${p.created_by_name || '-'}</td>
@@ -281,6 +295,20 @@ function addItemRow() {
         options += `<option value="${sp.id}" data-price="${sp.harga_beli_default}" data-satuan="${sp.satuan}">${sp.nama} (${sp.satuan}) - Stock: ${sp.current_stock}</option>`;
     });
     
+    let priceColumn = isOwner 
+        ? `<td>
+                <input type="number" step="0.01" class="form-control item-price" name="items[${itemCounter}][harga_beli]" min="0" value="0" required onchange="calculateSubtotal(${itemCounter})">
+            </td>
+            <td>
+                <strong class="item-subtotal">Rp 0</strong>
+            </td>`
+        : `<td class="price-column" style="display:none;">
+                <input type="number" step="0.01" class="form-control item-price" name="items[${itemCounter}][harga_beli]" min="0" value="0" readonly>
+            </td>
+            <td class="price-column" style="display:none;">
+                <strong class="item-subtotal">Rp 0</strong>
+            </td>`;
+    
     let html = `
         <tr id="row${itemCounter}">
             <td>
@@ -291,12 +319,7 @@ function addItemRow() {
             <td>
                 <input type="number" class="form-control item-qty" name="items[${itemCounter}][qty]" min="1" value="1" required onchange="calculateSubtotal(${itemCounter})">
             </td>
-            <td>
-                <input type="number" step="0.01" class="form-control item-price" name="items[${itemCounter}][harga_beli]" min="0" value="0" required onchange="calculateSubtotal(${itemCounter})">
-            </td>
-            <td>
-                <strong class="item-subtotal">Rp 0</strong>
-            </td>
+            ${priceColumn}
             <td>
                 <button type="button" class="btn btn-danger btn-sm" onclick="removeItemRow(${itemCounter})">
                     <i class="fas fa-trash"></i>
@@ -306,6 +329,11 @@ function addItemRow() {
     `;
     
     $('#itemsTableBody').append(html);
+    
+    // Hide price columns for non-owner
+    if (!isOwner) {
+        $('.price-column').hide();
+    }
 }
 
 // Update harga saat sparepart dipilih

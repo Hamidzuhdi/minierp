@@ -23,9 +23,23 @@ if ($action === 'create') {
         exit;
     }
     
+    // Cek role user
+    $user_role = $_SESSION['role'] ?? 'Admin';
+    $is_owner = ($user_role === 'Owner');
+    
     // Hitung total
     $total = 0;
-    foreach ($items as $item) {
+    foreach ($items as &$item) {
+        // Jika bukan owner, gunakan harga_beli_default dari database
+        if (!$is_owner) {
+            $sql_price = "SELECT harga_beli_default FROM spareparts WHERE id = " . (int)$item['sparepart_id'];
+            $result_price = mysqli_query($conn, $sql_price);
+            if ($row_price = mysqli_fetch_assoc($result_price)) {
+                $item['harga_beli'] = (float)$row_price['harga_beli_default'];
+            } else {
+                $item['harga_beli'] = 0;
+            }
+        }
         $total += $item['qty'] * $item['harga_beli'];
     }
     
