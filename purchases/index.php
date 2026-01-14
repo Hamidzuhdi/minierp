@@ -122,7 +122,7 @@ $is_owner = ($user_role === 'Owner');
                             <tfoot>
                                 <tr>
                                     <td colspan="3" class="text-end"><strong>TOTAL:</strong></td>
-                                    <td colspan="2"><strong id="grandTotal">Rp 0</strong></td>
+                                    <td colspan="2" class="price-column"><strong id="grandTotal">Rp 0</strong></td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -305,20 +305,22 @@ function displayPurchases(purchases) {
                             <i class="fas fa-edit"></i> Isi Data
                         </button>
                         ` : ''}
-                        ${!isOwner && p.status === 'Pending Approval' ? `
+                        ${isOwner && p.status === 'Pending Approval' ? `
                         <button class="btn btn-success btn-sm" onclick="updateStatus(${p.id}, 'Approved')" title="Approve">
-                            <i class="fas fa-check"></i>
+                            <i class="fas fa-check"></i> Approve
                         </button>
+                        ` : ''}
+                        ${!isOwner && p.status === 'Pending Approval' ? `
                         <button class="btn btn-danger btn-sm" onclick="deletePurchase(${p.id})" title="Hapus">
                             <i class="fas fa-trash"></i>
                         </button>
                         ` : ''}
                         ${isOwner && p.status === 'Approved' && p.is_paid === 'Belum Bayar' ? `
                         <button class="btn btn-primary btn-sm" onclick="updatePayment(${p.id}, 'Sudah Bayar')" title="Tandai Sudah Bayar">
-                            <i class="fas fa-money-bill"></i>
+                            <i class="fas fa-money-bill"></i> Bayar
                         </button>
                         ` : ''}
-                        ${p.status === 'Approved' ? `
+                        ${isOwner && p.status === 'Approved' ? `
                         <button class="btn btn-warning btn-sm" onclick="updateStatus(${p.id}, 'Refund')" title="Refund">
                             <i class="fas fa-undo"></i>
                         </button>
@@ -357,10 +359,10 @@ function addItemRow() {
             <td>
                 <strong class="item-subtotal">Rp 0</strong>
             </td>`
-        : `<td class="price-column" style="display:none;">
+        : `<td class="price-column">
                 <input type="number" step="0.01" class="form-control item-price" name="items[${itemCounter}][harga_beli]" min="0" value="0" readonly>
             </td>
-            <td class="price-column" style="display:none;">
+            <td class="price-column">
                 <strong class="item-subtotal">Rp 0</strong>
             </td>`;
     
@@ -384,11 +386,6 @@ function addItemRow() {
     `;
     
     $('#itemsTableBody').append(html);
-    
-    // Hide price columns for non-owner
-    if (!isOwner) {
-        $('.price-column').hide();
-    }
 }
 
 // Update harga saat sparepart dipilih
@@ -487,16 +484,46 @@ function viewDetail(id) {
                 let itemsHtml = '';
                 let total = 0;
                 p.items.forEach(function(item) {
-                    itemsHtml += `
-                        <tr>
-                            <td>${item.sparepart_name}</td>
-                            <td>${item.qty} ${item.satuan}</td>
-                            <td>Rp ${formatNumber(item.harga_beli)}</td>
-                            <td>Rp ${formatNumber(item.subtotal)}</td>
-                        </tr>
-                    `;
+                    if (isOwner) {
+                        itemsHtml += `
+                            <tr>
+                                <td>${item.sparepart_name}</td>
+                                <td>${item.qty} ${item.satuan}</td>
+                                <td>Rp ${formatNumber(item.harga_beli)}</td>
+                                <td>Rp ${formatNumber(item.subtotal)}</td>
+                            </tr>
+                        `;
+                    } else {
+                        itemsHtml += `
+                            <tr>
+                                <td>${item.sparepart_name}</td>
+                                <td>${item.qty} ${item.satuan}</td>
+                            </tr>
+                        `;
+                    }
                     total += parseFloat(item.subtotal);
                 });
+                
+                let tableHeader = isOwner 
+                    ? `<tr>
+                        <th>Sparepart</th>
+                        <th>Qty</th>
+                        <th>Harga</th>
+                        <th>Subtotal</th>
+                    </tr>`
+                    : `<tr>
+                        <th>Sparepart</th>
+                        <th>Qty</th>
+                    </tr>`;
+                
+                let tableFooter = isOwner 
+                    ? `<tfoot>
+                        <tr>
+                            <td colspan="3" class="text-end"><strong>TOTAL:</strong></td>
+                            <td><strong>Rp ${formatNumber(total)}</strong></td>
+                        </tr>
+                    </tfoot>`
+                    : '';
                 
                 let html = `
                     <div class="row mb-3">
@@ -515,22 +542,12 @@ function viewDetail(id) {
                     <h6>Item Pembelian:</h6>
                     <table class="table table-bordered">
                         <thead>
-                            <tr>
-                                <th>Sparepart</th>
-                                <th>Qty</th>
-                                <th>Harga</th>
-                                <th>Subtotal</th>
-                            </tr>
+                            ${tableHeader}
                         </thead>
                         <tbody>
                             ${itemsHtml}
                         </tbody>
-                        <tfoot>
-                            <tr>
-                                <td colspan="3" class="text-end"><strong>TOTAL:</strong></td>
-                                <td><strong>Rp ${formatNumber(total)}</strong></td>
-                            </tr>
-                        </tfoot>
+                        ${tableFooter}
                     </table>
                 `;
                 
