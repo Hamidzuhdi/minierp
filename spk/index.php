@@ -288,6 +288,11 @@ function displaySPKs(spks) {
                         <button class="btn btn-warning btn-sm" onclick="openAnalisaModal(${spk.id})" title="Analisa Mekanik">
                             <i class="fas fa-wrench"></i>
                         </button>
+                        ${isOwner && spk.status_spk === 'Dikirim ke owner' ? `
+                        <button class="btn btn-success btn-sm" onclick="createInvoiceFromSPK(${spk.id})" title="Buat Invoice & Cetak PDF">
+                            <i class="fas fa-file-invoice"></i> Buat Invoice
+                        </button>
+                        ` : ''}
                         <div class="btn-group btn-group-sm" role="group">
                             <button type="button" class="btn btn-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
                                 Status
@@ -298,7 +303,6 @@ function displaySPKs(spks) {
                                 <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dalam Pengerjaan')">Dalam Pengerjaan</a></li>
                                 <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Selesai')">Selesai</a></li>
                                 ${!isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dikirim ke owner')">Dikirim ke owner</a></li>` : ''}
-                                ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Buat Invoice')">Buat Invoice</a></li>` : ''}
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="deleteSPK(${spk.id})">Hapus SPK</a></li>
                             </ul>
@@ -334,7 +338,8 @@ function getStatusBadge(status) {
         'Dalam Pengerjaan': 'primary',
         'Selesai': 'success',
         'Dikirim ke owner': 'secondary',
-        'Buat Invoice': 'danger'
+        'Buat Invoice': 'danger',
+        'Sudah Cetak Invoice': 'dark'
     };
     return `<span class="badge bg-${badges[status] || 'secondary'}">${status}</span>`;
 }
@@ -414,13 +419,14 @@ function viewDetail(id) {
                 let totalSparepart = 0;
                 if (spk.items && spk.items.length > 0) {
                     spk.items.forEach(function(item) {
+                        let subtotal = parseFloat(item.subtotal) || 0;
                         if (isOwner) {
                             html += `
                                 <tr>
                                     <td>${item.sparepart_name}</td>
                                     <td>${item.qty} ${item.satuan}</td>
-                                    <td>Rp ${formatNumber(item.harga_satuan)}</td>
-                                    <td>Rp ${formatNumber(item.subtotal)}</td>
+                                    <td>Rp ${formatNumber(item.harga_jual_default)}</td>
+                                    <td>Rp ${formatNumber(subtotal)}</td>
                                 </tr>
                             `;
                         } else {
@@ -431,7 +437,7 @@ function viewDetail(id) {
                                 </tr>
                             `;
                         }
-                        totalSparepart += parseFloat(item.subtotal);
+                        totalSparepart += subtotal;
                     });
                 } else {
                     html += `<tr><td colspan="${isOwner ? '4' : '2'}" class="text-center">Belum ada sparepart</td></tr>`;
@@ -571,6 +577,41 @@ function updateStatus(id, status) {
 // Download Invoice PDF
 function downloadInvoicePDF(spkId) {
     window.open('generate_invoice_pdf.php?spk_id=' + spkId, '_blank');
+}
+
+// Cetak Invoice PDF + Update status ke "Sudah Cetak Invoice"
+function createInvoiceFromSPK(spkId) {
+    if (!confirm('Cetak Invoice PDF dan tandai SPK ini sebagai "Sudah Cetak Invoice"?')) {
+        return;
+    }
+    
+    // Update status dulu
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: {
+            action: 'update_status',
+            id: spkId,
+            status: 'Sudah Cetak Invoice'
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', 'Status SPK diubah ke "Sudah Cetak Invoice". Membuka PDF...');
+                loadSPKs();
+                
+                // Buka PDF setelah status berhasil diupdate
+                setTimeout(function() {
+                    downloadInvoicePDF(spkId);
+                }, 500);
+            } else {
+                showAlert('danger', response.message);
+            }
+        },
+        error: function() {
+            showAlert('danger', 'Gagal mengubah status. Silakan coba lagi.');
+        }
+    });
 }
 
 function deleteSPK(id) {

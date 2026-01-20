@@ -107,7 +107,8 @@ elseif ($action === 'read_one') {
     
     if ($row = mysqli_fetch_assoc($result)) {
         // Get SPK items
-        $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan
+        $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
+                      (si.qty * sp.harga_jual_default) as subtotal
                       FROM spk_items si
                       JOIN spareparts sp ON si.sparepart_id = sp.id
                       WHERE si.spk_id = $id";
@@ -201,7 +202,7 @@ elseif ($action === 'update_status') {
     $status = $_POST['status'];
     
     // Validasi status
-    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke owner', 'Buat Invoice'];
+    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke owner', 'Buat Invoice', 'Sudah Cetak Invoice'];
     if (!in_array($status, $valid_statuses)) {
         echo json_encode(['success' => false, 'message' => 'Status tidak valid']);
         exit;
