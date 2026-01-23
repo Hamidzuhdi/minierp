@@ -8,11 +8,17 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$page_title = "Invoice & Piutang";
-include '../header.php';
-
 $user_role = $_SESSION['role'] ?? 'Admin';
 $is_owner = ($user_role === 'Owner');
+
+// Hanya Owner yang bisa akses halaman invoice
+if (!$is_owner) {
+    header('Location: ../dashboard.php');
+    exit;
+}
+
+$page_title = "Invoice & Piutang";
+include '../header.php';
 ?>
 
 <div class="container-fluid py-4">
@@ -49,7 +55,6 @@ $is_owner = ($user_role === 'Owner');
                                     <th>SPK</th>
                                     <th>Customer</th>
                                     <th>Kendaraan</th>
-                                    <th>Grand Total</th>
                                     <th>Terbayar</th>
                                     <th>Sisa</th>
                                     <th>Status</th>
@@ -58,7 +63,7 @@ $is_owner = ($user_role === 'Owner');
                             </thead>
                             <tbody id="invoiceTableBody">
                                 <tr>
-                                    <td colspan="9" class="text-center">Loading...</td>
+                                    <td colspan="8" class="text-center">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -175,11 +180,15 @@ $is_owner = ($user_role === 'Owner');
                     <input type="hidden" id="payment_invoice_id" name="invoice_id">
                     
                     <div class="alert alert-info" id="payment_info">
-                    <strong>Sisa Piutang:</strong> <span id="payment_sisa">Rp 0</span><br>
-                    <small class="text-muted">
-                        <i class="fas fa-info-circle"></i> Input pembayaran sesuai yang diterima. 
-                        Bayar penuh = Lunas, Bayar sebagian = Cicilan. Status otomatis terupdate.
-                    </small>
+                        <strong>Sisa Piutang:</strong> <span id="payment_sisa">Rp 0</span><br>
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle"></i> Input pembayaran sesuai yang diterima. 
+                            Bayar penuh = Lunas, Bayar sebagian = Cicilan. Status otomatis terupdate.
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="amount" class="form-label">Jumlah Bayar *</label>
                         <input type="number" class="form-control" id="amount" name="amount" step="0.01" min="0" required>
                     </div>
                     
@@ -291,7 +300,7 @@ function displayInvoices(invoices) {
     let html = '';
     
     if (invoices.length === 0) {
-        html = '<tr><td colspan="9" class="text-center">Belum ada data invoice</td></tr>';
+        html = '<tr><td colspan="8" class="text-center">Belum ada data invoice</td></tr>';
     } else {
         invoices.forEach(function(inv) {
             let statusBadge = '';
@@ -309,7 +318,6 @@ function displayInvoices(invoices) {
                     <td><small>${inv.spk_code}</small></td>
                     <td>${inv.customer_name}<br><small class="text-muted">${inv.customer_phone}</small></td>
                     <td><small>${inv.nomor_polisi}<br>${inv.merk} ${inv.model}</small></td>
-                    <td>Rp ${formatNumber(inv.grand_total)}</td>
                     <td class="text-success">Rp ${formatNumber(inv.total_paid)}</td>
                     <td class="text-danger">Rp ${formatNumber(inv.sisa_piutang)}</td>
                     <td>${statusBadge}</td>
@@ -317,7 +325,7 @@ function displayInvoices(invoices) {
                         <button class="btn btn-info btn-sm" onclick="viewDetail(${inv.id})" title="Detail">
                             <i class="fas fa-eye"></i>
                         </button>
-                        ${isOwner && inv.status_piutang !== 'Lunas' ? `
+                        ${inv.status_piutang !== 'Lunas' ? `
                         <button class="btn btn-success btn-sm" onclick="openPaymentModal(${inv.id}, ${inv.sisa_piutang})" title="Input Bayar">
                             <i class="fas fa-money-bill"></i>
                         </button>
@@ -485,14 +493,12 @@ function displayInvoiceDetail(inv) {
                     <td>Rp ${formatNumber(pay.amount)}</td>
                     <td>${pay.method}</td>
                     <td>${pay.note || '-'}</td>
-                    <td>-</td>
-                    ${isOwner && inv.status_piutang !== 'Lunas' ? `
+                    <td>Owner</td>
                     <td>
                         <button class="btn btn-danger btn-sm" onclick="deletePayment(${pay.id}, ${inv.id})" title="Hapus">
                             <i class="fas fa-trash"></i>
                         </button>
                     </td>
-                    ` : '<td></td>'}
                 </tr>
             `;
         });
@@ -551,11 +557,9 @@ function displayInvoiceDetail(inv) {
         <hr>
         <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="mb-0">Riwayat Pembayaran</h6>
-            ${isOwner && inv.status_piutang !== 'Lunas' ? `
             <button class="btn btn-success btn-sm" onclick="openPaymentModal(${inv.id}, ${inv.sisa_piutang})">
                 <i class="fas fa-plus"></i> Input Bayar
             </button>
-            ` : ''}
         </div>
         <table class="table table-bordered table-sm">
             <thead>

@@ -132,11 +132,17 @@
                         <i class="fas fa-dolly"></i> Warehouse Out
                     </a>
                 </li>
+                <?php
+                // Menu Invoice hanya untuk Owner
+                $user_role = $_SESSION['role'] ?? 'Admin';
+                if ($user_role === 'Owner'):
+                ?>
                 <li class="nav-item">
                     <a class="nav-link" href="../invoices/index.php">
                         <i class="fas fa-file-invoice"></i> Invoices
                     </a>
                 </li>
+                <?php endif; ?>
                 <li class="nav-item">
                     <a class="nav-link" href="../audit/index.php">
                         <i class="fas fa-history"></i> Audit Log
