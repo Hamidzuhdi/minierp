@@ -31,7 +31,7 @@ if (!$row = mysqli_fetch_assoc($result)) {
 
 $spk = $row;
 
-// Get SPK items dengan harga jual
+// Get SPK items (sparepart) dengan harga jual
 $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
               (si.qty * sp.harga_jual_default) as subtotal_jual
               FROM spk_items si
@@ -46,8 +46,28 @@ while ($item = mysqli_fetch_assoc($result_items)) {
     $total_sparepart += $item['subtotal_jual'];
 }
 
-$biaya_jasa = (float)$spk['biaya_jasa'];
-$grand_total = $total_sparepart + $biaya_jasa;
+// Get SPK services (jasa service)
+$sql_services = "SELECT ss.*, sp.nama_jasa, sp.kategori
+                 FROM spk_services ss
+                 JOIN service_prices sp ON ss.service_price_id = sp.id
+                 WHERE ss.spk_id = $spk_id";
+$result_services = mysqli_query($conn, $sql_services);
+
+$services = [];
+$total_jasa = 0;
+while ($svc = mysqli_fetch_assoc($result_services)) {
+    $services[] = $svc;
+    $total_jasa += $svc['subtotal'];
+}
+
+$grand_total = $total_sparepart + $total_jasa;
+
+// Generate filename: nama_cust-nopol-jenis_mobil-tgl_spk
+$customer_name_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['customer_name']);
+$nopol_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['nomor_polisi']);
+$jenis_mobil_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['merk'] . '_' . $spk['model']);
+$tanggal_clean = date('Ymd', strtotime($spk['tanggal']));
+$filename = $customer_name_clean . '-' . $nopol_clean . '-' . $jenis_mobil_clean . '-' . $tanggal_clean . '.pdf';
 
 ?>
 <!DOCTYPE html>
@@ -97,6 +117,11 @@ $grand_total = $total_sparepart + $biaya_jasa;
         .items-table th {
             background-color: #f0f0f0;
             font-weight: bold;
+        }
+        .items-table .grand-total {
+            background-color: #f0f0f0;
+            font-weight: bold;
+            border-top: 2px solid #000;
         }
         .items-table .text-right {
             text-align: right;
@@ -171,22 +196,62 @@ $grand_total = $total_sparepart + $biaya_jasa;
         </table>
     </div>
 
-    <h3>Detail Pekerjaan & Sparepart</h3>
+    <h3>Detail Pekerjaan Jasa Service</h3>
     <table class="items-table">
         <thead>
             <tr>
                 <th class="text-center" width="5%">No</th>
-                <th width="45%">Deskripsi</th>
+                <th width="50%">Nama Jasa</th>
                 <th class="text-center" width="10%">Qty</th>
-                <th class="text-center" width="10%">Satuan</th>
                 <th class="text-right" width="15%">Harga</th>
-                <th class="text-right" width="15%">Subtotal</th>
+                <th class="text-right" width="20%">Subtotal</th>
             </tr>
         </thead>
         <tbody>
             <?php 
             $no = 1;
-            foreach ($items as $item): 
+            if (count($services) > 0) {
+                foreach ($services as $svc): 
+            ?>
+            <tr>
+                <td class="text-center"><?php echo $no++; ?></td>
+                <td><?php echo $svc['nama_jasa']; ?></td>
+                <td class="text-center"><?php echo $svc['qty']; ?></td>
+                <td class="text-right">Rp <?php echo number_format($svc['harga'], 0, ',', '.'); ?></td>
+                <td class="text-right">Rp <?php echo number_format($svc['subtotal'], 0, ',', '.'); ?></td>
+            </tr>
+            <?php 
+                endforeach;
+            } else {
+            ?>
+            <tr>
+                <td colspan="5" class="text-center">Tidak ada jasa service</td>
+            </tr>
+            <?php } ?>
+            <tr class="grand-total">
+                <td colspan="4" class="text-right"><strong>Total Jasa Service:</strong></td>
+                <td class="text-right"><strong>Rp <?php echo number_format($total_jasa, 0, ',', '.'); ?></strong></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 style="margin-top: 30px;">Detail Sparepart yang Digunakan</h3>
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th class="text-center" width="5%">No</th>
+                <th width="40%">Nama Sparepart</th>
+                <th class="text-center" width="10%">Qty</th>
+                <th class="text-center" width="10%">Satuan</th>
+                <th class="text-right" width="15%">Harga</th>
+                <th class="text-right" width="20%">Subtotal</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php 
+            $no = 1;
+            if (count($items) > 0) {
+                foreach ($items as $item): 
             ?>
             <tr>
                 <td class="text-center"><?php echo $no++; ?></td>
@@ -196,15 +261,18 @@ $grand_total = $total_sparepart + $biaya_jasa;
                 <td class="text-right">Rp <?php echo number_format($item['harga_jual_default'], 0, ',', '.'); ?></td>
                 <td class="text-right">Rp <?php echo number_format($item['subtotal_jual'], 0, ',', '.'); ?></td>
             </tr>
-            <?php endforeach; ?>
-            
-            <?php if (!empty($spk['service_description'])): ?>
+            <?php 
+                endforeach;
+            } else {
+            ?>
             <tr>
-                <td class="text-center"><?php echo $no++; ?></td>
-                <td colspan="4">Jasa Service: <?php echo $spk['service_description']; ?></td>
-                <td class="text-right">Rp <?php echo number_format($biaya_jasa, 0, ',', '.'); ?></td>
+                <td colspan="6" class="text-center">Tidak ada sparepart</td>
             </tr>
-            <?php endif; ?>
+            <?php } ?>
+            <tr class="grand-total">
+                <td colspan="5" class="text-right"><strong>Total Sparepart:</strong></td>
+                <td class="text-right"><strong>Rp <?php echo number_format($total_sparepart, 0, ',', '.'); ?></strong></td>
+            </tr>
         </tbody>
     </table>
 
@@ -212,12 +280,12 @@ $grand_total = $total_sparepart + $biaya_jasa;
         <div class="total-section">
             <table>
                 <tr>
-                    <td><strong>Total Sparepart:</strong></td>
-                    <td class="text-right">Rp <?php echo number_format($total_sparepart, 0, ',', '.'); ?></td>
+                    <td><strong>Total Jasa Service:</strong></td>
+                    <td class="text-right">Rp <?php echo number_format($total_jasa, 0, ',', '.'); ?></td>
                 </tr>
                 <tr>
-                    <td><strong>Biaya Jasa:</strong></td>
-                    <td class="text-right">Rp <?php echo number_format($biaya_jasa, 0, ',', '.'); ?></td>
+                    <td><strong>Total Sparepart:</strong></td>
+                    <td class="text-right">Rp <?php echo number_format($total_sparepart, 0, ',', '.'); ?></td>
                 </tr>
                 <tr class="grand-total">
                     <td><strong>GRAND TOTAL:</strong></td>
@@ -226,6 +294,13 @@ $grand_total = $total_sparepart + $biaya_jasa;
             </table>
         </div>
     </div>
+
+    <?php if (!empty($spk['saran_service'])): ?>
+    <div style="clear: both; margin-top: 30px; border: 1px solid #ddd; padding: 15px; background-color: #f9f9f9;">
+        <h4 style="margin-top: 0;">Saran Service:</h4>
+        <p style="margin: 0;"><?php echo nl2br(htmlspecialchars($spk['saran_service'])); ?></p>
+    </div>
+    <?php endif; ?>
 
     <div style="clear: both; margin-top: 80px;">
         <table width="100%">
@@ -251,7 +326,8 @@ $grand_total = $total_sparepart + $biaya_jasa;
     </div>
 
     <script>
-        // Auto print when page loads
+        // Set filename and auto print when page loads
+        document.title = '<?php echo $filename; ?>';
         window.onload = function() {
             window.print();
         }

@@ -341,17 +341,39 @@ function displayInvoices(invoices) {
 
 // Load preview detail SPK
 function loadSPKPreview(spkId) {
+    console.log('Loading SPK preview for ID:', spkId);
     $.ajax({
         url: '../spk/backend.php?action=read_one&id=' + spkId,
         type: 'GET',
         dataType: 'json',
         success: function(response) {
+            console.log('SPK Preview response:', response);
             if (response.success) {
                 let spk = response.data;
                 let itemsHtml = '';
                 let totalSparepart = 0;
                 
+                // Jasa Services
+                if (spk.services && spk.services.length > 0) {
+                    itemsHtml += '<tr><td colspan="4" class="table-secondary"><strong>Jasa Service</strong></td></tr>';
+                    spk.services.forEach(function(svc) {
+                        let subtotal = parseFloat(svc.subtotal);
+                        totalSparepart += subtotal;
+                        
+                        itemsHtml += `
+                            <tr>
+                                <td>${svc.nama_jasa}</td>
+                                <td class="text-center">${svc.qty}</td>
+                                <td class="text-end">Rp ${formatNumber(svc.harga)}</td>
+                                <td class="text-end">Rp ${formatNumber(subtotal)}</td>
+                            </tr>
+                        `;
+                    });
+                }
+                
+                // Spareparts
                 if (spk.items && spk.items.length > 0) {
+                    itemsHtml += '<tr><td colspan="4" class="table-secondary"><strong>Sparepart</strong></td></tr>';
                     spk.items.forEach(function(item) {
                         let subtotal = parseFloat(item.subtotal);
                         totalSparepart += subtotal;
@@ -365,16 +387,17 @@ function loadSPKPreview(spkId) {
                             </tr>
                         `;
                     });
-                } else {
-                    itemsHtml = '<tr><td colspan="4" class="text-center text-muted">Tidak ada sparepart</td></tr>';
                 }
                 
-                let biayaJasa = parseFloat(spk.biaya_jasa || 0);
-                let grandTotal = totalSparepart + biayaJasa;
+                if (itemsHtml === '') {
+                    itemsHtml = '<tr><td colspan="4" class="text-center text-muted">Tidak ada data</td></tr>';
+                }
+                
+                let grandTotal = totalSparepart;
                 
                 $('#preview_items').html(itemsHtml);
                 $('#preview_total_sparepart').html('<strong>Rp ' + formatNumber(totalSparepart) + '</strong>');
-                $('#preview_biaya_jasa').html('<strong>Rp ' + formatNumber(biayaJasa) + '</strong>');
+                $('#preview_biaya_jasa').html('<strong>Rp 0</strong>');
                 $('#preview_grand_total').html('<strong>Rp ' + formatNumber(grandTotal) + '</strong>');
             } else {
                 $('#preview_items').html('<tr><td colspan="4" class="text-center text-danger">Gagal memuat data</td></tr>');
@@ -393,19 +416,25 @@ function loadSPKReady() {
         type: 'GET',
         dataType: 'json',
         success: function(response) {
+            console.log('SPK Ready response:', response);
             if (response.success) {
                 let options = '<option value="">-- Pilih SPK --</option>';
                 response.data.forEach(function(spk) {
                     options += `<option value="${spk.id}" 
                                 data-code="${spk.kode_unik_reference}"
                                 data-customer="${spk.customer_name}"
-                                data-vehicle="${spk.nomor_polisi}"
-                                data-biaya="${spk.biaya_jasa}">
+                                data-vehicle="${spk.nomor_polisi}">
                                 ${spk.kode_unik_reference} - ${spk.customer_name} (${spk.nomor_polisi})
                                 </option>`;
                 });
                 $('#spk_select').html(options);
+            } else {
+                showAlert('warning', response.message || 'Tidak ada SPK yang siap dibuatkan invoice');
             }
+        },
+        error: function(xhr, status, error) {
+            console.error('Load SPK Ready Error:', {xhr: xhr, status: status, error: error});
+            showAlert('danger', 'Gagal memuat daftar SPK: ' + error);
         }
     });
 }
@@ -432,6 +461,9 @@ function createInvoice() {
         return;
     }
     
+    // Disable button to prevent double click
+    $('#btnCreateInvoice').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Memproses...');
+    
     $.ajax({
         url: 'backend.php',
         type: 'POST',
@@ -441,6 +473,7 @@ function createInvoice() {
         },
         dataType: 'json',
         success: function(response) {
+            console.log('Create invoice response:', response);
             if (response.success) {
                 showAlert('success', response.message);
                 $('#createInvoiceModal').modal('hide');
@@ -448,6 +481,15 @@ function createInvoice() {
             } else {
                 showAlert('danger', response.message);
             }
+        },
+        error: function(xhr, status, error) {
+            console.error('AJAX Error:', {xhr: xhr, status: status, error: error});
+            console.error('Response Text:', xhr.responseText);
+            showAlert('danger', 'Terjadi kesalahan: ' + error + '. Periksa console untuk detail.');
+        },
+        complete: function() {
+            // Re-enable button
+            $('#btnCreateInvoice').prop('disabled', false).html('Buat Invoice');
         }
     });
 }
@@ -470,18 +512,39 @@ function viewDetail(id) {
 function displayInvoiceDetail(inv) {
     let statusBadge = inv.status_piutang === 'Lunas' ? 'success' : (inv.status_piutang === 'Sudah Dicicil' ? 'warning' : 'danger');
     
-    // Items table
+    // Services table
+    let servicesHtml = '';
+    if (inv.services && inv.services.length > 0) {
+        inv.services.forEach(function(svc) {
+            servicesHtml += `
+                <tr>
+                    <td>${svc.nama_jasa}</td>
+                    <td class="text-center">${svc.qty}x</td>
+                    <td class="text-end">Rp ${formatNumber(svc.harga)}</td>
+                    <td class="text-end">Rp ${formatNumber(svc.subtotal)}</td>
+                </tr>
+            `;
+        });
+    } else {
+        servicesHtml = '<tr><td colspan="4" class="text-center text-muted">Tidak ada jasa service</td></tr>';
+    }
+    
+    // Spareparts table
     let itemsHtml = '';
-    inv.items.forEach(function(item) {
-        itemsHtml += `
-            <tr>
-                <td>${item.sparepart_name}</td>
-                <td class="text-center">${item.qty} ${item.satuan}</td>
-                <td class="text-end">Rp ${formatNumber(item.harga_jual_default)}</td>
-                <td class="text-end">Rp ${formatNumber(item.subtotal)}</td>
-            </tr>
-        `;
-    });
+    if (inv.items && inv.items.length > 0) {
+        inv.items.forEach(function(item) {
+            itemsHtml += `
+                <tr>
+                    <td>${item.sparepart_name}</td>
+                    <td class="text-center">${item.qty} ${item.satuan}</td>
+                    <td class="text-end">Rp ${formatNumber(item.harga_jual_default)}</td>
+                    <td class="text-end">Rp ${formatNumber(item.subtotal)}</td>
+                </tr>
+            `;
+        });
+    } else {
+        itemsHtml = '<tr><td colspan="4" class="text-center text-muted">Tidak ada sparepart</td></tr>';
+    }
     
     // Payments table
     let paymentsHtml = '';
@@ -525,11 +588,32 @@ function displayInvoiceDetail(inv) {
         </div>
         
         <hr>
-        <h6>Detail Sparepart & Jasa</h6>
+        <h6>Detail Jasa Service</h6>
         <table class="table table-bordered table-sm">
-            <thead>
+            <thead class="table-light">
                 <tr>
-                    <th>Sparepart</th>
+                    <th>Nama Jasa</th>
+                    <th class="text-center" width="15%">Qty</th>
+                    <th class="text-end" width="20%">Harga</th>
+                    <th class="text-end" width="20%">Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${servicesHtml}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="3" class="text-end"><strong>Total Jasa Service:</strong></td>
+                    <td class="text-end"><strong>Rp ${formatNumber(inv.biaya_jasa)}</strong></td>
+                </tr>
+            </tfoot>
+        </table>
+        
+        <h6 class="mt-4">Detail Sparepart</h6>
+        <table class="table table-bordered table-sm">
+            <thead class="table-light">
+                <tr>
+                    <th>Nama Sparepart</th>
                     <th class="text-center" width="15%">Qty</th>
                     <th class="text-end" width="20%">Harga</th>
                     <th class="text-end" width="20%">Subtotal</th>
@@ -543,13 +627,14 @@ function displayInvoiceDetail(inv) {
                     <td colspan="3" class="text-end"><strong>Total Sparepart:</strong></td>
                     <td class="text-end"><strong>Rp ${formatNumber(inv.biaya_sparepart)}</strong></td>
                 </tr>
-                <tr>
-                    <td colspan="3" class="text-end"><strong>Biaya Jasa:</strong></td>
-                    <td class="text-end"><strong>Rp ${formatNumber(inv.biaya_jasa)}</strong></td>
-                </tr>
+            </tfoot>
+        </table>
+        
+        <table class="table table-bordered table-sm">
+            <tfoot>
                 <tr class="table-primary">
                     <td colspan="3" class="text-end"><strong>GRAND TOTAL:</strong></td>
-                    <td class="text-end"><strong>Rp ${formatNumber(inv.total)}</strong></td>
+                    <td class="text-end" width="20%"><strong>Rp ${formatNumber(inv.total)}</strong></td>
                 </tr>
             </tfoot>
         </table>

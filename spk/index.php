@@ -45,8 +45,9 @@ $is_owner = ($user_role === 'Owner');
                                 <option value="Disetujui">Disetujui</option>
                                 <option value="Dalam Pengerjaan">Dalam Pengerjaan</option>
                                 <option value="Selesai">Selesai</option>
-                                <option value="Dikirim ke owner">Dikirim ke owner</option>
+                                <option value="Dikirim ke Owner">Dikirim ke Owner</option>
                                 <option value="Buat Invoice">Buat Invoice</option>
+                                <option value="Sudah Cetak Invoice">Sudah Cetak Invoice</option>
                             </select>
                         </div>
                     </div>
@@ -140,7 +141,7 @@ $is_owner = ($user_role === 'Owner');
 
 <!-- Modal Analisa Mekanik -->
 <div class="modal fade" id="analisaModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Analisa & Estimasi Mekanik</h5>
@@ -151,24 +152,67 @@ $is_owner = ($user_role === 'Owner');
                     <input type="hidden" id="analisa_spk_id" name="id">
                     <input type="hidden" name="action" value="update_analisa">
                     
-                    <div class="mb-3">
-                        <label for="analisa_mekanik" class="form-label">Analisa Mekanik</label>
-                        <textarea class="form-control" id="analisa_mekanik" name="analisa_mekanik" rows="3" placeholder="Hasil pemeriksaan dan diagnosa..."></textarea>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="service_description" class="form-label">Deskripsi Service</label>
-                        <textarea class="form-control" id="service_description" name="service_description" rows="3" placeholder="Pekerjaan yang akan dilakukan..."></textarea>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="biaya_jasa" class="form-label">Estimasi Biaya Jasa</label>
-                        <input type="number" step="0.01" class="form-control" id="biaya_jasa" name="biaya_jasa" value="0" min="0">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="saran_service" class="form-label">Saran Service</label>
-                        <textarea class="form-control" id="saran_service" name="saran_service" rows="2" placeholder="Saran untuk customer..."></textarea>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="analisa_mekanik" class="form-label">Analisa Mekanik</label>
+                                <textarea class="form-control" id="analisa_mekanik" name="analisa_mekanik" rows="3" placeholder="Hasil pemeriksaan dan diagnosa..."></textarea>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="service_description" class="form-label">Deskripsi Service</label>
+                                <textarea class="form-control" id="service_description" name="service_description" rows="3" placeholder="Pekerjaan yang akan dilakukan..."></textarea>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="saran_service" class="form-label">Saran Service</label>
+                                <textarea class="form-control" id="saran_service" name="saran_service" rows="2" placeholder="Saran untuk customer..."></textarea>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <h6>Jasa Service</h6>
+                            <div class="card mb-3">
+                                <div class="card-body">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <select class="form-select form-select-sm" id="service_select">
+                                                <option value="">Pilih Jasa...</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <input type="number" class="form-control form-control-sm" id="service_qty" value="1" min="1" placeholder="Qty">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <button type="button" class="btn btn-primary btn-sm w-100" onclick="addServiceToSPK()">
+                                                <i class="fas fa-plus"></i> Tambah
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Jasa</th>
+                                        <th>Qty</th>
+                                        <th>Harga</th>
+                                        <th>Subtotal</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="serviceListTable">
+                                    <tr><td colspan="5" class="text-center text-muted">Belum ada jasa</td></tr>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <th colspan="3">Total Biaya Jasa:</th>
+                                        <th colspan="2" id="totalServiceCost">Rp 0</th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -288,7 +332,7 @@ function displaySPKs(spks) {
                         <button class="btn btn-warning btn-sm" onclick="openAnalisaModal(${spk.id})" title="Analisa Mekanik">
                             <i class="fas fa-wrench"></i>
                         </button>
-                        ${isOwner && spk.status_spk === 'Dikirim ke owner' ? `
+                        ${isOwner && spk.status_spk === 'Dikirim ke Owner' ? `
                         <button class="btn btn-success btn-sm" onclick="createInvoiceFromSPK(${spk.id})" title="Buat Invoice & Cetak PDF">
                             <i class="fas fa-file-invoice"></i> Buat Invoice
                         </button>
@@ -302,7 +346,9 @@ function displaySPKs(spks) {
                                 <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Disetujui')">Disetujui</a></li>
                                 <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dalam Pengerjaan')">Dalam Pengerjaan</a></li>
                                 <li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Selesai')">Selesai</a></li>
-                                ${!isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dikirim ke owner')">Dikirim ke owner</a></li>` : ''}
+                                ${!isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dikirim ke Owner')">Dikirim ke Owner</a></li>` : ''}
+                                ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Buat Invoice')">Buat Invoice</a></li>` : ''}
+                                ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Sudah Cetak Invoice')">Sudah Cetak Invoice</a></li>` : ''}
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="deleteSPK(${spk.id})">Hapus SPK</a></li>
                             </ul>
@@ -337,7 +383,7 @@ function getStatusBadge(status) {
         'Disetujui': 'info',
         'Dalam Pengerjaan': 'primary',
         'Selesai': 'success',
-        'Dikirim ke owner': 'secondary',
+        'Dikirim ke Owner': 'secondary',
         'Buat Invoice': 'danger',
         'Sudah Cetak Invoice': 'dark'
     };
@@ -404,6 +450,51 @@ function viewDetail(id) {
                     
                     <hr>
                     
+                    <h6>Jasa Service</h6>
+                    <table class="table table-bordered table-sm">
+                        <thead>
+                            <tr>
+                                <th>Nama Jasa</th>
+                                <th>Qty</th>
+                                ${isOwner ? '<th>Harga</th><th>Subtotal</th>' : ''}
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                let totalJasa = 0;
+                if (spk.services && spk.services.length > 0) {
+                    spk.services.forEach(function(svc) {
+                        let subtotal = parseFloat(svc.subtotal) || 0;
+                        if (isOwner) {
+                            html += `
+                                <tr>
+                                    <td>${svc.nama_jasa}</td>
+                                    <td>${svc.qty}</td>
+                                    <td>Rp ${formatNumber(svc.harga)}</td>
+                                    <td>Rp ${formatNumber(subtotal)}</td>
+                                </tr>
+                            `;
+                        } else {
+                            html += `
+                                <tr>
+                                    <td>${svc.nama_jasa}</td>
+                                    <td>${svc.qty}</td>
+                                </tr>
+                            `;
+                        }
+                        totalJasa += subtotal;
+                    });
+                } else {
+                    html += `<tr><td colspan="${isOwner ? '4' : '2'}" class="text-center">Belum ada jasa service</td></tr>`;
+                }
+                
+                html += `
+                        </tbody>
+                    </table>
+                    
+                    <hr>
+                    
                     <h6>Sparepart yang Digunakan</h6>
                     <table class="table table-bordered table-sm">
                         <thead>
@@ -451,8 +542,8 @@ function viewDetail(id) {
                     html += `
                         <tfoot>
                             <tr><th colspan="3">Total Sparepart:</th><th>Rp ${formatNumber(totalSparepart)}</th></tr>
-                            <tr><th colspan="3">Biaya Jasa:</th><th>Rp ${formatNumber(spk.biaya_jasa)}</th></tr>
-                            <tr><th colspan="3">GRAND TOTAL:</th><th><strong>Rp ${formatNumber(totalSparepart + parseFloat(spk.biaya_jasa))}</strong></th></tr>
+                            <tr><th colspan="3">Total Jasa Service:</th><th>Rp ${formatNumber(totalJasa)}</th></tr>
+                            <tr><th colspan="3">GRAND TOTAL:</th><th><strong>Rp ${formatNumber(totalSparepart + totalJasa)}</strong></th></tr>
                         </tfoot>
                     `;
                 }
@@ -460,13 +551,18 @@ function viewDetail(id) {
                 html += `
                     </table>
                     
-                    ${isOwner && spk.status_spk === 'Buat Invoice' ? `
+                    <hr>
+                    
                     <div class="mb-3">
-                        <button class="btn btn-success" onclick="downloadInvoicePDF(${spk.id})">
-                            <i class="fas fa-file-pdf"></i> Download Invoice PDF
+                        <button class="btn btn-danger btn-lg" onclick="downloadInvoicePDF(${spk.id})">
+                            <i class="fas fa-file-pdf"></i> Cetak / Download Invoice PDF
                         </button>
+                        ${isOwner && spk.status_spk !== 'Sudah Cetak Invoice' ? `
+                        <button class="btn btn-success btn-lg" onclick="createInvoiceFromSPK(${spk.id})">
+                            <i class="fas fa-check-circle"></i> Cetak PDF & Tandai Selesai
+                        </button>
+                        ` : ''}
                     </div>
-                    ` : ''}
                     
                     <hr>
                     
@@ -520,8 +616,13 @@ function openAnalisaModal(id) {
                 $('#analisa_spk_id').val(spk.id);
                 $('#analisa_mekanik').val(spk.analisa_mekanik || '');
                 $('#service_description').val(spk.service_description || '');
-                $('#biaya_jasa').val(spk.biaya_jasa || 0);
                 $('#saran_service').val(spk.saran_service || '');
+                
+                // Load services for this SPK
+                loadSPKServices(spk.id);
+                // Load available service prices
+                loadServicePrices();
+                
                 $('#analisaModal').modal('show');
             }
         }
@@ -654,5 +755,130 @@ function showAlert(type, message) {
     setTimeout(function() {
         $('.alert').fadeOut(function() { $(this).remove(); });
     }, 3000);
+}
+
+// ========== Service Management Functions ==========
+let servicePricesCache = [];
+
+function loadServicePrices() {
+    $.ajax({
+        url: '../services/backend.php?action=read_active',
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                servicePricesCache = response.data;
+                let options = '<option value="">Pilih Jasa...</option>';
+                response.data.forEach(function(service) {
+                    options += `<option value="${service.id}" data-price="${service.harga}">${service.nama_jasa} - Rp ${formatNumber(service.harga)}</option>`;
+                });
+                $('#service_select').html(options);
+            }
+        }
+    });
+}
+
+function loadSPKServices(spkId) {
+    $.ajax({
+        url: 'backend.php?action=read_one&id=' + spkId,
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success && response.data.services) {
+                displayServicesList(response.data.services);
+            }
+        }
+    });
+}
+
+function displayServicesList(services) {
+    let html = '';
+    let total = 0;
+    
+    if (services && services.length > 0) {
+        services.forEach(function(svc) {
+            let subtotal = parseFloat(svc.subtotal) || 0;
+            total += subtotal;
+            html += `
+                <tr>
+                    <td>${svc.nama_jasa}</td>
+                    <td>${svc.qty}</td>
+                    <td>Rp ${formatNumber(svc.harga)}</td>
+                    <td>Rp ${formatNumber(subtotal)}</td>
+                    <td>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteServiceFromSPK(${svc.id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+    } else {
+        html = '<tr><td colspan="5" class="text-center text-muted">Belum ada jasa</td></tr>';
+    }
+    
+    $('#serviceListTable').html(html);
+    $('#totalServiceCost').html('Rp ' + formatNumber(total));
+}
+
+function addServiceToSPK() {
+    const spkId = $('#analisa_spk_id').val();
+    const servicePriceId = $('#service_select').val();
+    const qty = parseInt($('#service_qty').val()) || 1;
+    
+    if (!servicePriceId) {
+        showAlert('warning', 'Pilih jasa terlebih dahulu');
+        return;
+    }
+    
+    const selectedOption = $('#service_select option:selected');
+    const harga = parseFloat(selectedOption.data('price'));
+    
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: {
+            action: 'add_service',
+            spk_id: spkId,
+            service_price_id: servicePriceId,
+            qty: qty,
+            harga: harga
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                loadSPKServices(spkId);
+                $('#service_select').val('');
+                $('#service_qty').val(1);
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
+}
+
+function deleteServiceFromSPK(serviceId) {
+    if (!confirm('Hapus jasa ini?')) return;
+    
+    const spkId = $('#analisa_spk_id').val();
+    
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: {
+            action: 'delete_service',
+            id: serviceId
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                loadSPKServices(spkId);
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
 }
 </script>

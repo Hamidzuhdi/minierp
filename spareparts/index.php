@@ -53,6 +53,7 @@ $is_owner = ($user_role === 'Owner');
                             <thead>
                                 <tr>
                                     <th>ID</th>
+                                    <th>Kode</th>
                                     <th>Nama</th>
                                     <th>Barcode</th>
                                     <th>Satuan</th>
@@ -65,7 +66,7 @@ $is_owner = ($user_role === 'Owner');
                             </thead>
                             <tbody id="sparepartTableBody">
                                 <tr>
-                                    <td colspan="9" class="text-center">Loading...</td>
+                                    <td colspan="10" class="text-center">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -92,10 +93,20 @@ $is_owner = ($user_role === 'Owner');
                     <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
+                                <label for="kode_sparepart" class="form-label">Kode Sparepart</label>
+                                <input type="text" class="form-control" id="kode_sparepart" name="kode_sparepart">
+                                <small class="text-muted">Contoh: SP001, BRK-001</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
                                 <label for="nama" class="form-label">Nama Sparepart *</label>
                                 <input type="text" class="form-control" id="nama" name="nama" required>
                             </div>
                         </div>
+                    </div>
+                    
+                    <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="barcode" class="form-label">Barcode/QR Code</label>
@@ -103,23 +114,23 @@ $is_owner = ($user_role === 'Owner');
                                 <small class="text-muted">Kosongkan jika tidak ada</small>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div class="row">
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="satuan" class="form-label">Satuan</label>
                                 <input type="text" class="form-control" id="satuan" name="satuan" value="pcs">
                             </div>
                         </div>
-                        <div class="col-md-4">
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
                             <div class="mb-3 price-column">
                                 <label for="harga_beli_default" class="form-label">Harga Beli (Moving Average)</label>
                                 <input type="number" step="0.01" class="form-control" id="harga_beli_default" name="harga_beli_default" value="0" readonly>
                                 <small class="text-muted">Otomatis dihitung dari pembelian</small>
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="mb-3 price-column">
                                 <label for="harga_jual_default" class="form-label">Harga Jual Default</label>
                                 <input type="number" step="0.01" class="form-control" id="harga_jual_default" name="harga_jual_default" value="0">
@@ -200,7 +211,7 @@ function displaySpareparts(spareparts) {
     let html = '';
     
     if (spareparts.length === 0) {
-        html = '<tr><td colspan="9" class="text-center">Belum ada data sparepart</td></tr>';
+        html = '<tr><td colspan="10" class="text-center">Belum ada data sparepart</td></tr>';
     } else {
         spareparts.forEach(function(sp) {
             // Konversi ke integer untuk perbandingan yang benar
@@ -213,6 +224,7 @@ function displaySpareparts(spareparts) {
             html += `
                 <tr>
                     <td>${sp.id}</td>
+                    <td><strong>${sp.kode_sparepart || '-'}</strong></td>
                     <td>${sp.nama}</td>
                     <td>${sp.barcode || '-'}</td>
                     <td>${sp.satuan}</td>
@@ -260,6 +272,7 @@ function editSparepart(id) {
                 let sp = response.data;
                 $('#sparepartModalTitle').text('Edit Sparepart');
                 $('#sparepartId').val(sp.id);
+                $('#kode_sparepart').val(sp.kode_sparepart);
                 $('#nama').val(sp.nama);
                 $('#barcode').val(sp.barcode);
                 $('#satuan').val(sp.satuan);

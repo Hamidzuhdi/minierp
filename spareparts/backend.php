@@ -15,6 +15,7 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 // CREATE - Tambah Sparepart Baru
 if ($action === 'create') {
     $nama = trim($_POST['nama']);
+    $kode_sparepart = trim($_POST['kode_sparepart']);
     $barcode = trim($_POST['barcode']);
     $satuan = trim($_POST['satuan']);
     $harga_beli_default = (float)$_POST['harga_beli_default'];
@@ -27,6 +28,15 @@ if ($action === 'create') {
         exit;
     }
     
+    // Cek kode_sparepart sudah ada (jika diisi)
+    if (!empty($kode_sparepart)) {
+        $check = mysqli_query($conn, "SELECT id FROM spareparts WHERE kode_sparepart = '" . mysqli_real_escape_string($conn, $kode_sparepart) . "'");
+        if (mysqli_num_rows($check) > 0) {
+            echo json_encode(['success' => false, 'message' => 'Kode sparepart sudah terdaftar']);
+            exit;
+        }
+    }
+    
     // Cek barcode sudah ada (jika diisi)
     if (!empty($barcode)) {
         $check = mysqli_query($conn, "SELECT id FROM spareparts WHERE barcode = '" . mysqli_real_escape_string($conn, $barcode) . "'");
@@ -36,8 +46,9 @@ if ($action === 'create') {
         }
     }
     
-    $sql = "INSERT INTO spareparts (nama, barcode, satuan, harga_beli_default, harga_jual_default, min_stock, current_stock) 
+    $sql = "INSERT INTO spareparts (nama, kode_sparepart, barcode, satuan, harga_beli_default, harga_jual_default, min_stock, current_stock) 
             VALUES ('" . mysqli_real_escape_string($conn, $nama) . "',
+                    " . (!empty($kode_sparepart) ? "'" . mysqli_real_escape_string($conn, $kode_sparepart) . "'" : "NULL") . ",
                     " . (!empty($barcode) ? "'" . mysqli_real_escape_string($conn, $barcode) . "'" : "NULL") . ",
                     '" . mysqli_real_escape_string($conn, $satuan) . "',
                     $harga_beli_default,
@@ -57,7 +68,7 @@ elseif ($action === 'read') {
     $search = $_GET['search'] ?? '';
     $low_stock = $_GET['low_stock'] ?? '';
     
-    $sql = "SELECT id, nama, barcode, satuan, harga_beli_default, harga_jual_default, 
+    $sql = "SELECT id, nama, kode_sparepart, barcode, satuan, harga_beli_default, harga_jual_default, 
             min_stock, current_stock, created_at FROM spareparts";
     
     $conditions = [];
@@ -124,6 +135,7 @@ elseif ($action === 'search_barcode') {
 elseif ($action === 'update') {
     $id = (int)$_POST['id'];
     $nama = trim($_POST['nama']);
+    $kode_sparepart = trim($_POST['kode_sparepart']);
     $barcode = trim($_POST['barcode']);
     $satuan = trim($_POST['satuan']);
     $harga_beli_default = (float)$_POST['harga_beli_default'];
@@ -134,6 +146,15 @@ elseif ($action === 'update') {
     if (empty($nama)) {
         echo json_encode(['success' => false, 'message' => 'Nama sparepart harus diisi']);
         exit;
+    }
+    
+    // Cek kode_sparepart sudah dipakai sparepart lain (jika diisi)
+    if (!empty($kode_sparepart)) {
+        $check = mysqli_query($conn, "SELECT id FROM spareparts WHERE kode_sparepart = '" . mysqli_real_escape_string($conn, $kode_sparepart) . "' AND id != $id");
+        if (mysqli_num_rows($check) > 0) {
+            echo json_encode(['success' => false, 'message' => 'Kode sparepart sudah terdaftar']);
+            exit;
+        }
     }
     
     // Cek barcode sudah dipakai sparepart lain (jika diisi)
@@ -147,6 +168,7 @@ elseif ($action === 'update') {
     
     $sql = "UPDATE spareparts SET 
             nama = '" . mysqli_real_escape_string($conn, $nama) . "',
+            kode_sparepart = " . (!empty($kode_sparepart) ? "'" . mysqli_real_escape_string($conn, $kode_sparepart) . "'" : "NULL") . ",
             barcode = " . (!empty($barcode) ? "'" . mysqli_real_escape_string($conn, $barcode) . "'" : "NULL") . ",
             satuan = '" . mysqli_real_escape_string($conn, $satuan) . "',
             harga_beli_default = $harga_beli_default,

@@ -121,6 +121,20 @@ elseif ($action === 'read_one') {
         
         $row['items'] = $items;
         
+        // Get SPK services
+        $sql_services = "SELECT ss.*, sp.kode_jasa, sp.nama_jasa, sp.kategori
+                         FROM spk_services ss
+                         JOIN service_prices sp ON ss.service_price_id = sp.id
+                         WHERE ss.spk_id = $id";
+        $result_services = mysqli_query($conn, $sql_services);
+        
+        $services = [];
+        while ($service = mysqli_fetch_assoc($result_services)) {
+            $services[] = $service;
+        }
+        
+        $row['services'] = $services;
+        
         // Get warehouse requests
         $sql_warehouse = "SELECT wo.*, sp.nama as sparepart_name, u.username as requested_by_name
                          FROM warehouse_out wo
@@ -179,13 +193,11 @@ elseif ($action === 'update_analisa') {
     $id = (int)$_POST['id'];
     $analisa_mekanik = trim($_POST['analisa_mekanik']);
     $service_description = trim($_POST['service_description']);
-    $biaya_jasa = (float)$_POST['biaya_jasa'];
     $saran_service = trim($_POST['saran_service']);
     
     $sql = "UPDATE spk SET 
             analisa_mekanik = '" . mysqli_real_escape_string($conn, $analisa_mekanik) . "',
             service_description = '" . mysqli_real_escape_string($conn, $service_description) . "',
-            biaya_jasa = $biaya_jasa,
             saran_service = '" . mysqli_real_escape_string($conn, $saran_service) . "'
             WHERE id = $id";
     
@@ -202,7 +214,7 @@ elseif ($action === 'update_status') {
     $status = $_POST['status'];
     
     // Validasi status
-    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke owner', 'Buat Invoice', 'Sudah Cetak Invoice'];
+    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice'];
     if (!in_array($status, $valid_statuses)) {
         echo json_encode(['success' => false, 'message' => 'Status tidak valid']);
         exit;
@@ -234,6 +246,36 @@ elseif ($action === 'add_sparepart') {
     }
 }
 
+// ADD SERVICE TO SPK
+elseif ($action === 'add_service') {
+    $spk_id = (int)$_POST['spk_id'];
+    $service_price_id = (int)$_POST['service_price_id'];
+    $qty = (int)$_POST['qty'];
+    $harga = (float)$_POST['harga'];
+    
+    $sql = "INSERT INTO spk_services (spk_id, service_price_id, qty, harga) 
+            VALUES ($spk_id, $service_price_id, $qty, $harga)";
+    
+    if (mysqli_query($conn, $sql)) {
+        echo json_encode(['success' => true, 'message' => 'Jasa service berhasil ditambahkan ke SPK']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal menambahkan service: ' . mysqli_error($conn)]);
+    }
+}
+
+// DELETE SERVICE FROM SPK
+elseif ($action === 'delete_service') {
+    $id = (int)$_POST['id'];
+    
+    $sql = "DELETE FROM spk_services WHERE id = $id";
+    
+    if (mysqli_query($conn, $sql)) {
+        echo json_encode(['success' => true, 'message' => 'Service berhasil dihapus']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal menghapus service: ' . mysqli_error($conn)]);
+    }
+}
+
 // DELETE SPK (hanya jika belum ada invoice)
 elseif ($action === 'delete') {
     $id = (int)$_POST['id'];
@@ -249,6 +291,7 @@ elseif ($action === 'delete') {
     
     // Delete related data
     mysqli_query($conn, "DELETE FROM spk_items WHERE spk_id = $id");
+    mysqli_query($conn, "DELETE FROM spk_services WHERE spk_id = $id");
     mysqli_query($conn, "DELETE FROM warehouse_out WHERE spk_id = $id");
     
     $sql = "DELETE FROM spk WHERE id = $id";

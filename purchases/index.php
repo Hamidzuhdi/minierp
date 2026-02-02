@@ -345,7 +345,6 @@ function openAddModal() {
 
 // Tambah baris item
 function addItemRow() {
-    itemCounter++;
     
     let options = '<option value="">-- Pilih Sparepart --</option>';
     spareparts.forEach(function(sp) {
@@ -367,14 +366,14 @@ function addItemRow() {
             </td>`;
     
     let html = `
-        <tr id="row${itemCounter}">
+        <tr id="row${itemCounter}" data-counter="${itemCounter}">
             <td>
-                <select class="form-select sparepart-select" name="items[${itemCounter}][sparepart_id]" required onchange="updatePrice(${itemCounter})">
+                <select class="form-select sparepart-select" required onchange="updatePrice(${itemCounter})">
                     ${options}
                 </select>
             </td>
             <td>
-                <input type="number" class="form-control item-qty" name="items[${itemCounter}][qty]" min="1" value="1" required onchange="calculateSubtotal(${itemCounter})">
+                <input type="number" class="form-control item-qty" min="1" value="1" required onchange="calculateSubtotal(${itemCounter})">
             </td>
             ${priceColumn}
             <td>
@@ -386,6 +385,7 @@ function addItemRow() {
     `;
     
     $('#itemsTableBody').append(html);
+    itemCounter++;
 }
 
 // Update harga saat sparepart dipilih
@@ -428,20 +428,45 @@ $('#purchaseForm').on('submit', function(e) {
     
     // Kumpulkan data items
     let items = [];
+    let rowCount = 0;
+    
     $('#itemsTableBody tr').each(function() {
+        rowCount++;
         let row = $(this);
-        let sparepartId = row.find('.sparepart-select').val();
+        let rowCounter = row.data('counter');
+        
+        // Gunakan selector yang spesifik dengan row ID
+        let sparepartSelect = row.find('.sparepart-select');
+        let sparepartId = sparepartSelect.val();
+        let sparepartName = sparepartSelect.find('option:selected').text();
         let qty = row.find('.item-qty').val();
         let price = row.find('.item-price').val();
         
+        console.log(`=== Row #${rowCount} (counter: ${rowCounter}) ===`);
+        console.log('  Sparepart ID:', sparepartId);
+        console.log('  Sparepart Name:', sparepartName);
+        console.log('  Qty:', qty);
+        console.log('  Price:', price);
+        console.log('  Select element:', sparepartSelect[0]);
+        
         if (sparepartId && qty && price) {
-            items.push({
-                sparepart_id: sparepartId,
+            let item = {
+                sparepart_id: parseInt(sparepartId),
                 qty: parseInt(qty),
                 harga_beli: parseFloat(price)
-            });
+            };
+            console.log('  ✓ Item added:', item);
+            items.push(item);
+        } else {
+            console.log('  ✗ Item SKIPPED (incomplete data)');
         }
     });
+    
+    console.log('========================');
+    console.log('TOTAL ROWS PROCESSED:', rowCount);
+    console.log('TOTAL ITEMS TO SUBMIT:', items.length);
+    console.log('ITEMS ARRAY:', JSON.stringify(items, null, 2));
+    console.log('========================');
     
     if (items.length === 0) {
         showAlert('warning', 'Tambahkan minimal 1 item pembelian');
@@ -459,6 +484,18 @@ $('#purchaseForm').on('submit', function(e) {
         contentType: false,
         dataType: 'json',
         success: function(response) {
+            console.log('=== BACKEND RESPONSE ===');
+            console.log('Response:', response);
+            if (response.debug) {
+                console.log('Items JSON received by backend:', response.debug.items_json_raw);
+                console.log('Items decoded by backend:', response.debug.items_decoded);
+                console.log('Items count:', response.debug.items_count);
+                
+                // Alert untuk debug
+                alert('DEBUG:\nItems sent: 4\nItems received by backend: ' + response.debug.items_count + '\n\nCheck console for details');
+            }
+            console.log('========================');
+            
             if (response.success) {
                 showAlert('success', response.message);
                 $('#purchaseModal').modal('hide');
@@ -466,6 +503,11 @@ $('#purchaseForm').on('submit', function(e) {
             } else {
                 showAlert('danger', response.message);
             }
+        },
+        error: function(xhr, status, error) {
+            console.error('AJAX Error:', error);
+            console.error('Response:', xhr.responseText);
+            showAlert('danger', 'Error: ' + error);
         }
     });
 });

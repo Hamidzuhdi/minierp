@@ -118,6 +118,11 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" href="../services/index.php">
+                        <i class="fas fa-wrench"></i> Harga Jasa
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" href="../purchases/index.php">
                         <i class="fas fa-shopping-cart"></i> Purchases
                     </a>

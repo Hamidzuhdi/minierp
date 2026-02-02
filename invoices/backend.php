@@ -22,8 +22,8 @@ if ($action === 'create_invoice') {
     
     $spk_id = (int)$_POST['spk_id'];
     
-    // Validasi SPK status harus "Dikirim ke owner"
-    $sql_check = "SELECT s.*, s.status_spk, s.biaya_jasa, c.name as customer_name, v.nomor_polisi
+    // Validasi SPK status harus "Sudah Cetak Invoice"
+    $sql_check = "SELECT s.*, s.status_spk, c.name as customer_name, v.nomor_polisi
                   FROM spk s
                   JOIN customers c ON s.customer_id = c.id
                   JOIN vehicles v ON s.vehicle_id = v.id
@@ -57,7 +57,14 @@ if ($action === 'create_invoice') {
     $items_data = mysqli_fetch_assoc($result_items);
     $biaya_sparepart = (float)($items_data['biaya_sparepart'] ?? 0);
     
-    $biaya_jasa = (float)$spk['biaya_jasa'];
+    // Hitung total jasa dari spk_services
+    $sql_services = "SELECT SUM(subtotal) as biaya_jasa
+                     FROM spk_services
+                     WHERE spk_id = $spk_id";
+    $result_services = mysqli_query($conn, $sql_services);
+    $services_data = mysqli_fetch_assoc($result_services);
+    $biaya_jasa = (float)($services_data['biaya_jasa'] ?? 0);
+    
     $total = $biaya_sparepart + $biaya_jasa;
     
     // Generate no_invoice unik
@@ -154,6 +161,19 @@ elseif ($action === 'read_one') {
     $result = mysqli_query($conn, $sql);
     
     if ($row = mysqli_fetch_assoc($result)) {
+        // Get services
+        $sql_services = "SELECT ss.*, sp.kode_jasa, sp.nama_jasa, sp.kategori
+                         FROM spk_services ss
+                         JOIN service_prices sp ON ss.service_price_id = sp.id
+                         WHERE ss.spk_id = {$row['spk_id']}";
+        $result_services = mysqli_query($conn, $sql_services);
+        
+        $services = [];
+        while ($service = mysqli_fetch_assoc($result_services)) {
+            $services[] = $service;
+        }
+        $row['services'] = $services;
+        
         // Get sparepart items
         $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
                       (si.qty * sp.harga_jual_default) as subtotal
@@ -340,7 +360,7 @@ elseif ($action === 'delete_payment') {
 // GET SPK READY FOR INVOICE - SPK yang bisa dibuatkan invoice
 elseif ($action === 'get_spk_ready') {
     // SPK dengan status "Sudah Cetak Invoice" yang belum punya invoice
-    $sql = "SELECT s.id, s.kode_unik_reference, s.tanggal, s.biaya_jasa,
+    $sql = "SELECT s.id, s.kode_unik_reference, s.tanggal,
             c.name as customer_name, v.nomor_polisi
             FROM spk s
             JOIN customers c ON s.customer_id = c.id
