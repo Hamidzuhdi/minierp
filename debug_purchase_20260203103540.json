@@ -1,0 +1,11 @@
+{
+    "POST": {
+        "action": "create",
+        "supplier": "",
+        "tanggal": "2026-02-06",
+        "items": "[{\"sparepart_id\":4,\"qty\":10,\"harga_beli\":30000}]"
+    },
+    "items_json": "[{\"sparepart_id\":4,\"qty\":10,\"harga_beli\":30000}]",
+    "items_json_length": 48,
+    "debug_file_location": "C:\\Users\\Hamid\\OneDrive\\Dokumen\\GitHub\\minierp\\purchases\/..\/debug_purchase_20260203103540.json"
+}

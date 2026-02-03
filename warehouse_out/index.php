@@ -152,6 +152,7 @@ include '../header.php';
 
 <script>
 let spareparts = [];
+const userRole = '<?php echo $_SESSION['role'] ?? 'Admin'; ?>';
 
 $(document).ready(function() {
     loadRequests();
@@ -243,14 +244,16 @@ function displayRequests(requests) {
                     <td>${req.requested_by_name || '-'}<br><small class="text-muted">${formatDateTime(req.created_at)}</small></td>
                     <td>${statusBadge}</td>
                     <td>
-                        ${req.status === 'Pending' ? `
+                        ${req.status === 'Pending' && userRole === 'Owner' ? `
                         <button class="btn btn-success btn-sm" onclick="approveRequest(${req.id})" title="Approve">
                             <i class="fas fa-check"></i>
                         </button>
                         <button class="btn btn-danger btn-sm" onclick="openRejectModal(${req.id})" title="Reject">
                             <i class="fas fa-times"></i>
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="deleteRequest(${req.id})" title="Hapus">
+                        ` : ''}
+                        ${req.status === 'Pending' && userRole === 'Admin' ? `
+                        <button class="btn btn-secondary btn-sm" onclick="deleteRequest(${req.id})" title="Hapus Request Saya">
                             <i class="fas fa-trash"></i>
                         </button>
                         ` : ''}

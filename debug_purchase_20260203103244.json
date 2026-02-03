@@ -1,0 +1,11 @@
+{
+    "POST": {
+        "action": "create",
+        "supplier": "",
+        "tanggal": "2026-02-03",
+        "items": "[{\"sparepart_id\":3,\"qty\":5,\"harga_beli\":0},{\"sparepart_id\":2,\"qty\":8,\"harga_beli\":0},{\"sparepart_id\":4,\"qty\":20,\"harga_beli\":0},{\"sparepart_id\":1,\"qty\":15,\"harga_beli\":0},{\"sparepart_id\":5,\"qty\":10,\"harga_beli\":0}]"
+    },
+    "items_json": "[{\"sparepart_id\":3,\"qty\":5,\"harga_beli\":0},{\"sparepart_id\":2,\"qty\":8,\"harga_beli\":0},{\"sparepart_id\":4,\"qty\":20,\"harga_beli\":0},{\"sparepart_id\":1,\"qty\":15,\"harga_beli\":0},{\"sparepart_id\":5,\"qty\":10,\"harga_beli\":0}]",
+    "items_json_length": 214,
+    "debug_file_location": "C:\\Users\\Hamid\\OneDrive\\Dokumen\\GitHub\\minierp\\purchases\/..\/debug_purchase_20260203103244.json"
+}

@@ -17,24 +17,7 @@ if ($action === 'create') {
     $supplier = trim($_POST['supplier'] ?? '');
     $tanggal = $_POST['tanggal'];
     $items_json = $_POST['items'];
-    
-    // EXTREME DEBUG - write to file
-    $debug_file = __DIR__ . '/../debug_purchase_' . date('YmdHis') . '.json';
-    file_put_contents($debug_file, json_encode([
-        'POST' => $_POST,
-        'items_json' => $items_json,
-        'items_json_length' => strlen($items_json),
-        'debug_file_location' => $debug_file
-    ], JSON_PRETTY_PRINT));
-    
     $items = json_decode($items_json, true);
-    
-    // Debug info
-    $debug = [
-        'items_json_raw' => $items_json,
-        'items_decoded' => $items,
-        'items_count' => count($items)
-    ];
     
     // Cek role user
     $user_role = $_SESSION['role'] ?? 'Admin';
@@ -86,17 +69,10 @@ if ($action === 'create') {
     if (mysqli_query($conn, $sql)) {
         $purchase_id = mysqli_insert_id($conn);
         
-        // Debug: Log items yang akan diinsert
-        error_log("=== INSERTING PURCHASE ITEMS ===");
-        error_log("Items JSON: " . $_POST['items']);
-        error_log("Items decoded: " . print_r($items, true));
-        
         // Insert purchase items
         foreach ($items as $index => $item) {
             $subtotal = $item['qty'] * $item['harga_beli'];
             $barcode = isset($item['barcode']) ? "'" . mysqli_real_escape_string($conn, $item['barcode']) . "'" : 'NULL';
-            
-            error_log("Item #$index - sparepart_id: {$item['sparepart_id']}, qty: {$item['qty']}, harga: {$item['harga_beli']}");
             
             $sql_item = "INSERT INTO purchase_items (purchase_id, sparepart_id, qty, harga_beli, barcode) 
                         VALUES ($purchase_id, 
@@ -105,22 +81,15 @@ if ($action === 'create') {
                                 " . (float)$item['harga_beli'] . ",
                                 $barcode)";
             
-            error_log("SQL: $sql_item");
-            
             if (!mysqli_query($conn, $sql_item)) {
-                error_log("ERROR: " . mysqli_error($conn));
-            } else {
-                error_log("SUCCESS - Insert ID: " . mysqli_insert_id($conn));
+                error_log("Purchase item insert error: " . mysqli_error($conn));
             }
         }
-        
-        error_log("=== END INSERTING ===");
         
         echo json_encode([
             'success' => true, 
             'message' => 'Purchase berhasil ditambahkan', 
-            'purchase_id' => $purchase_id,
-            'debug' => $debug
+            'purchase_id' => $purchase_id
         ]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal menambahkan purchase: ' . mysqli_error($conn)]);

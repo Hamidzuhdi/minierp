@@ -28,8 +28,8 @@ include '../header.php';
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">Data Invoice & Piutang</h5>
                     <?php if ($is_owner): ?>
-                    <button class="btn btn-primary btn-sm" onclick="openCreateInvoiceModal()">
-                        <i class="fas fa-plus"></i> Buat Invoice
+                    <button class="btn btn-primary btn-sm" onclick="autoCreateInvoices()" id="btnAutoCreateInvoice">
+                        <i class="fas fa-magic"></i> Refresh Invoice
                     </button>
                     <?php endif; ?>
                 </div>
@@ -74,83 +74,6 @@ include '../header.php';
     </div>
 </div>
 
-<!-- Modal Create Invoice -->
-<?php if ($is_owner): ?>
-<div class="modal fade" id="createInvoiceModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Buat Invoice dari SPK</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle"></i> <strong>Alur:</strong>
-                    <ol class="mb-0 mt-2">
-                        <li>Buat Invoice dari SPK yang statusnya <strong>"Sudah Cetak Invoice"</strong></li>
-                        <li>Invoice akan masuk dengan status <strong>"Belum Bayar"</strong></li>
-                        <li>Input pembayaran: Cash (langsung lunas) atau Cicilan (bertahap)</li>
-                        <li>Status otomatis berubah: Belum Bayar → Sudah Dicicil → Lunas</li>
-                    </ol>
-                </div>
-                <div class="mb-3">
-                    <label for="spk_select" class="form-label">Pilih SPK *</label>
-                    <select class="form-select" id="spk_select" required>
-                        <option value="">-- Pilih SPK --</option>
-                    </select>
-                </div>
-                <div id="spk_preview" style="display:none;">
-                    <hr>
-                    <h6>Preview Invoice</h6>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <strong>SPK:</strong> <span id="preview_spk_code"></span><br>
-                            <strong>Customer:</strong> <span id="preview_customer"></span>
-                        </div>
-                        <div class="col-md-6">
-                            <strong>Kendaraan:</strong> <span id="preview_vehicle"></span>
-                        </div>
-                    </div>
-                    
-                    <h6 class="mt-3">Detail Sparepart & Jasa</h6>
-                    <table class="table table-bordered table-sm">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Sparepart</th>
-                                <th class="text-center" width="15%">Qty</th>
-                                <th class="text-end" width="20%">Harga</th>
-                                <th class="text-end" width="20%">Subtotal</th>
-                            </tr>
-                        </thead>
-                        <tbody id="preview_items">
-                            <tr><td colspan="4" class="text-center">Loading...</td></tr>
-                        </tbody>
-                        <tfoot>
-                            <tr>
-                                <td colspan="3" class="text-end"><strong>Total Sparepart:</strong></td>
-                                <td class="text-end" id="preview_total_sparepart"><strong>Rp 0</strong></td>
-                            </tr>
-                            <tr>
-                                <td colspan="3" class="text-end"><strong>Biaya Jasa:</strong></td>
-                                <td class="text-end" id="preview_biaya_jasa"><strong>Rp 0</strong></td>
-                            </tr>
-                            <tr class="table-primary">
-                                <td colspan="3" class="text-end"><strong>GRAND TOTAL:</strong></td>
-                                <td class="text-end" id="preview_grand_total"><strong>Rp 0</strong></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                <button type="button" class="btn btn-primary" onclick="createInvoice()" id="btnCreateInvoice" disabled>Buat Invoice</button>
-            </div>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
-
 <!-- Modal Detail Invoice -->
 <div class="modal fade" id="detailModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
@@ -177,6 +100,7 @@ include '../header.php';
             </div>
             <form id="paymentForm">
                 <div class="modal-body">
+                    <input type="hidden" name="action" value="create_payment">
                     <input type="hidden" id="payment_invoice_id" name="invoice_id">
                     
                     <div class="alert alert-info" id="payment_info">
@@ -201,12 +125,15 @@ include '../header.php';
                         <label for="payment_method" class="form-label">Metode Pembayaran *</label>
                         <select class="form-select" id="payment_method" name="payment_method" required>
                             <option value="">-- Pilih Metode --</option>
-                            <option value="Cash">Cash</option>
-                            <option value="Transfer">Transfer</option>
+                            <option value="Cash">Cash / Tunai</option>
+                            <option value="Transfer">Transfer Bank</option>
                             <option value="Kartu Kredit">Kartu Kredit</option>
                             <option value="Kartu Debit">Kartu Debit</option>
-                            <option value="E-Wallet">E-Wallet</option>
+                            <option value="E-Wallet">E-Wallet (OVO, GoPay, Dana, dll)</option>
                         </select>
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle"></i> Pilihan selain Cash akan tersimpan sebagai Transfer di sistem
+                        </small>
                     </div>
                     
                     <div class="mb-3">
@@ -235,7 +162,6 @@ $(document).ready(function() {
     loadInvoices();
     
     if (isOwner) {
-        loadSPKReady();
         $('#payment_date').val(new Date().toISOString().split('T')[0]);
     }
     
@@ -251,28 +177,6 @@ $(document).ready(function() {
     // Filter status
     $('#statusFilter').on('change', function() {
         loadInvoices();
-    });
-    
-    // SPK select change
-    $('#spk_select').on('change', function() {
-        let spkId = $(this).val();
-        let selectedOption = $(this).find(':selected');
-        
-        if (spkId) {
-            // Set basic info
-            $('#preview_spk_code').text(selectedOption.data('code'));
-            $('#preview_customer').text(selectedOption.data('customer'));
-            $('#preview_vehicle').text(selectedOption.data('vehicle'));
-            
-            // Load detail SPK items
-            loadSPKPreview(spkId);
-            
-            $('#spk_preview').show();
-            $('#btnCreateInvoice').prop('disabled', false);
-        } else {
-            $('#spk_preview').hide();
-            $('#btnCreateInvoice').prop('disabled', true);
-        }
     });
 });
 
@@ -339,157 +243,33 @@ function displayInvoices(invoices) {
     $('#invoiceTableBody').html(html);
 }
 
-// Load preview detail SPK
-function loadSPKPreview(spkId) {
-    console.log('Loading SPK preview for ID:', spkId);
-    $.ajax({
-        url: '../spk/backend.php?action=read_one&id=' + spkId,
-        type: 'GET',
-        dataType: 'json',
-        success: function(response) {
-            console.log('SPK Preview response:', response);
-            if (response.success) {
-                let spk = response.data;
-                let itemsHtml = '';
-                let totalSparepart = 0;
-                
-                // Jasa Services
-                if (spk.services && spk.services.length > 0) {
-                    itemsHtml += '<tr><td colspan="4" class="table-secondary"><strong>Jasa Service</strong></td></tr>';
-                    spk.services.forEach(function(svc) {
-                        let subtotal = parseFloat(svc.subtotal);
-                        totalSparepart += subtotal;
-                        
-                        itemsHtml += `
-                            <tr>
-                                <td>${svc.nama_jasa}</td>
-                                <td class="text-center">${svc.qty}</td>
-                                <td class="text-end">Rp ${formatNumber(svc.harga)}</td>
-                                <td class="text-end">Rp ${formatNumber(subtotal)}</td>
-                            </tr>
-                        `;
-                    });
-                }
-                
-                // Spareparts
-                if (spk.items && spk.items.length > 0) {
-                    itemsHtml += '<tr><td colspan="4" class="table-secondary"><strong>Sparepart</strong></td></tr>';
-                    spk.items.forEach(function(item) {
-                        let subtotal = parseFloat(item.subtotal);
-                        totalSparepart += subtotal;
-                        
-                        itemsHtml += `
-                            <tr>
-                                <td>${item.sparepart_name}</td>
-                                <td class="text-center">${item.qty} ${item.satuan}</td>
-                                <td class="text-end">Rp ${formatNumber(item.harga_jual_default)}</td>
-                                <td class="text-end">Rp ${formatNumber(subtotal)}</td>
-                            </tr>
-                        `;
-                    });
-                }
-                
-                if (itemsHtml === '') {
-                    itemsHtml = '<tr><td colspan="4" class="text-center text-muted">Tidak ada data</td></tr>';
-                }
-                
-                let grandTotal = totalSparepart;
-                
-                $('#preview_items').html(itemsHtml);
-                $('#preview_total_sparepart').html('<strong>Rp ' + formatNumber(totalSparepart) + '</strong>');
-                $('#preview_biaya_jasa').html('<strong>Rp 0</strong>');
-                $('#preview_grand_total').html('<strong>Rp ' + formatNumber(grandTotal) + '</strong>');
-            } else {
-                $('#preview_items').html('<tr><td colspan="4" class="text-center text-danger">Gagal memuat data</td></tr>');
-            }
-        },
-        error: function() {
-            $('#preview_items').html('<tr><td colspan="4" class="text-center text-danger">Error loading data</td></tr>');
-        }
-    });
-}
-
-// Load SPK yang siap dibuatkan invoice
-function loadSPKReady() {
-    $.ajax({
-        url: 'backend.php?action=get_spk_ready',
-        type: 'GET',
-        dataType: 'json',
-        success: function(response) {
-            console.log('SPK Ready response:', response);
-            if (response.success) {
-                let options = '<option value="">-- Pilih SPK --</option>';
-                response.data.forEach(function(spk) {
-                    options += `<option value="${spk.id}" 
-                                data-code="${spk.kode_unik_reference}"
-                                data-customer="${spk.customer_name}"
-                                data-vehicle="${spk.nomor_polisi}">
-                                ${spk.kode_unik_reference} - ${spk.customer_name} (${spk.nomor_polisi})
-                                </option>`;
-                });
-                $('#spk_select').html(options);
-            } else {
-                showAlert('warning', response.message || 'Tidak ada SPK yang siap dibuatkan invoice');
-            }
-        },
-        error: function(xhr, status, error) {
-            console.error('Load SPK Ready Error:', {xhr: xhr, status: status, error: error});
-            showAlert('danger', 'Gagal memuat daftar SPK: ' + error);
-        }
-    });
-}
-
-// Open modal create invoice
-function openCreateInvoiceModal() {
-    loadSPKReady();
-    $('#spk_preview').hide();
-    $('#spk_select').val('');
-    $('#btnCreateInvoice').prop('disabled', true);
-    $('#createInvoiceModal').modal('show');
-}
-
-// Create invoice
-function createInvoice() {
-    let spk_id = $('#spk_select').val();
-    
-    if (!spk_id) {
-        showAlert('warning', 'Pilih SPK terlebih dahulu');
+// Auto create invoices for all SPK ready
+function autoCreateInvoices() {
+    if (!confirm('Buat invoice otomatis untuk SEMUA SPK yang sudah status "Sudah Cetak Invoice"?')) {
         return;
     }
     
-    if (!confirm('Yakin ingin membuat invoice untuk SPK ini?')) {
-        return;
-    }
-    
-    // Disable button to prevent double click
-    $('#btnCreateInvoice').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Memproses...');
+    // Disable button
+    $('#btnAutoCreateInvoice').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Memproses...');
     
     $.ajax({
         url: 'backend.php',
         type: 'POST',
-        data: {
-            action: 'create_invoice',
-            spk_id: spk_id
-        },
+        data: { action: 'auto_create_invoices' },
         dataType: 'json',
         success: function(response) {
-            console.log('Create invoice response:', response);
             if (response.success) {
                 showAlert('success', response.message);
-                $('#createInvoiceModal').modal('hide');
                 loadInvoices();
             } else {
                 showAlert('danger', response.message);
             }
         },
         error: function(xhr, status, error) {
-            console.error('AJAX Error:', {xhr: xhr, status: status, error: error});
-            console.error('Response Text:', xhr.responseText);
-            showAlert('danger', 'Terjadi kesalahan: ' + error + '. Periksa console untuk detail.');
+            showAlert('danger', 'Error: ' + error);
         },
         complete: function() {
-            // Re-enable button
-            $('#btnCreateInvoice').prop('disabled', false).html('Buat Invoice');
+            $('#btnAutoCreateInvoice').prop('disabled', false).html('<i class="fas fa-magic"></i> Buat Invoice Otomatis');
         }
     });
 }
@@ -697,11 +477,46 @@ function openPaymentModal(invoiceId, sisaPiutang) {
 $('#paymentForm').on('submit', function(e) {
     e.preventDefault();
     
+    let formData = new FormData(this);
+    let selectedMethod = $('#payment_method').val();
+    let currentNote = $('#notes').val().trim();
+    
+    // Mapping metode pembayaran ke DB enum
+    let dbMethod = 'cash'; // default
+    let methodDetail = '';
+    
+    if (selectedMethod === 'Cash') {
+        dbMethod = 'cash';
+    } else if (selectedMethod === 'Transfer') {
+        dbMethod = 'transfer';
+        methodDetail = 'transfer - bank transfer';
+    } else if (selectedMethod === 'Kartu Kredit') {
+        dbMethod = 'transfer';
+        methodDetail = 'transfer - kartu kredit';
+    } else if (selectedMethod === 'Kartu Debit') {
+        dbMethod = 'transfer';
+        methodDetail = 'transfer - kartu debit';
+    } else if (selectedMethod === 'E-Wallet') {
+        dbMethod = 'transfer';
+        methodDetail = 'transfer - e-wallet';
+    }
+    
+    // Gabungkan method detail dengan note user (jika ada)
+    let finalNote = methodDetail;
+    if (currentNote) {
+        finalNote = methodDetail ? methodDetail + ' | ' + currentNote : currentNote;
+    }
+    
+    // Replace data
+    formData.set('payment_method', dbMethod);
+    formData.set('notes', finalNote);
+    
     $.ajax({
         url: 'backend.php',
         type: 'POST',
-        data: $(this).serialize() + '&action=create_payment',
-        dataType: 'json',
+        data: formData,
+        processData: false,
+        contentType: false,
         success: function(response) {
             if (response.success) {
                 showAlert('success', response.message);

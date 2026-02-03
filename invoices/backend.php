@@ -357,6 +357,74 @@ elseif ($action === 'delete_payment') {
     }
 }
 
+// AUTO CREATE INVOICES - Create invoices for all SPK ready
+elseif ($action === 'auto_create_invoices') {
+    if ($user_role !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa membuat invoice']);
+        exit;
+    }
+    
+    // Get all SPK with status "Sudah Cetak Invoice" yang belum punya invoice
+    $sql = "SELECT s.id FROM spk s
+            WHERE s.status_spk = 'Sudah Cetak Invoice'
+            AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.spk_id = s.id)";
+    $result = mysqli_query($conn, $sql);
+    
+    $created_count = 0;
+    $errors = [];
+    
+    while ($row = mysqli_fetch_assoc($result)) {
+        $spk_id = $row['id'];
+        
+        // Hitung total sparepart
+        $sql_items = "SELECT SUM(si.qty * sp.harga_jual_default) as biaya_sparepart
+                      FROM spk_items si
+                      JOIN spareparts sp ON si.sparepart_id = sp.id
+                      WHERE si.spk_id = $spk_id";
+        $result_items = mysqli_query($conn, $sql_items);
+        $items_data = mysqli_fetch_assoc($result_items);
+        $biaya_sparepart = (float)($items_data['biaya_sparepart'] ?? 0);
+        
+        // Hitung total jasa
+        $sql_services = "SELECT SUM(subtotal) as biaya_jasa
+                         FROM spk_services
+                         WHERE spk_id = $spk_id";
+        $result_services = mysqli_query($conn, $sql_services);
+        $services_data = mysqli_fetch_assoc($result_services);
+        $biaya_jasa = (float)($services_data['biaya_jasa'] ?? 0);
+        
+        $total = $biaya_sparepart + $biaya_jasa;
+        
+        // Generate no_invoice unik
+        $prefix = 'INV';
+        $date_code = date('Ymd');
+        $check = mysqli_query($conn, "SELECT COUNT(*) as cnt FROM invoices WHERE DATE(tanggal) = CURDATE()");
+        $row_count = mysqli_fetch_assoc($check);
+        $urutan = $row_count['cnt'] + 1 + $created_count;
+        $no_invoice = $prefix . '-' . $date_code . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
+        
+        // Insert invoice
+        $sql_insert = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, total, status_piutang, metode_pembayaran, created_at)
+                VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'Belum Bayar', 'cash', NOW())";
+        
+        if (mysqli_query($conn, $sql_insert)) {
+            $created_count++;
+        } else {
+            $errors[] = "SPK ID $spk_id: " . mysqli_error($conn);
+        }
+    }
+    
+    if ($created_count > 0) {
+        $msg = "Berhasil membuat $created_count invoice otomatis";
+        if (count($errors) > 0) {
+            $msg .= " (dengan " . count($errors) . " error)";
+        }
+        echo json_encode(['success' => true, 'message' => $msg, 'created' => $created_count, 'errors' => $errors]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Tidak ada SPK yang siap dibuatkan invoice atau semua sudah punya invoice']);
+    }
+}
+
 // GET SPK READY FOR INVOICE - SPK yang bisa dibuatkan invoice
 elseif ($action === 'get_spk_ready') {
     // SPK dengan status "Sudah Cetak Invoice" yang belum punya invoice
