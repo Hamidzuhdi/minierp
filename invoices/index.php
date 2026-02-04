@@ -11,12 +11,6 @@ if (!isset($_SESSION['user_id'])) {
 $user_role = $_SESSION['role'] ?? 'Admin';
 $is_owner = ($user_role === 'Owner');
 
-// Hanya Owner yang bisa akses halaman invoice
-if (!$is_owner) {
-    header('Location: ../dashboard.php');
-    exit;
-}
-
 $page_title = "Invoice & Piutang";
 include '../header.php';
 ?>
@@ -151,6 +145,53 @@ include '../header.php';
 </div>
 <?php endif; ?>
 
+<!-- Modal Edit Pembayaran -->
+<div class="modal fade" id="editPaymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Pembayaran</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editPaymentForm">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="edit_payment">
+                    <input type="hidden" id="edit_payment_id" name="payment_id">
+                    <input type="hidden" id="edit_invoice_id" name="invoice_id">
+                    
+                    <div class="mb-3">
+                        <label for="edit_amount" class="form-label">Jumlah Bayar *</label>
+                        <input type="number" class="form-control" id="edit_amount" name="amount" step="0.01" min="0" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_payment_date" class="form-label">Tanggal Bayar *</label>
+                        <input type="date" class="form-control" id="edit_payment_date" name="payment_date" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_payment_method" class="form-label">Metode Pembayaran *</label>
+                        <select class="form-select" id="edit_payment_method" name="payment_method" required>
+                            <option value="">-- Pilih Metode --</option>
+                            <option value="cash">Cash / Tunai</option>
+                            <option value="transfer">Transfer Bank</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="edit_notes" class="form-label">Catatan (Opsional)</label>
+                        <textarea class="form-control" id="edit_notes" name="notes" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Update Pembayaran</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <?php include '../footer.php'; ?>
 
 <script>
@@ -229,7 +270,7 @@ function displayInvoices(invoices) {
                         <button class="btn btn-info btn-sm" onclick="viewDetail(${inv.id})" title="Detail">
                             <i class="fas fa-eye"></i>
                         </button>
-                        ${inv.status_piutang !== 'Lunas' ? `
+                        ${inv.status_piutang !== 'Lunas' && (isOwner || userRole === 'Admin') ? `
                         <button class="btn btn-success btn-sm" onclick="openPaymentModal(${inv.id}, ${inv.sisa_piutang})" title="Input Bayar">
                             <i class="fas fa-money-bill"></i>
                         </button>
@@ -330,17 +371,24 @@ function displayInvoiceDetail(inv) {
     let paymentsHtml = '';
     if (inv.payments.length > 0) {
         inv.payments.forEach(function(pay) {
+            let updatedAtDisplay = '-';
+            if (pay.updated_at && pay.updated_at !== pay.created_at) {
+                updatedAtDisplay = formatDateTime(pay.updated_at);
+            }
+            
             paymentsHtml += `
                 <tr>
-                    <td>${formatDate(pay.tanggal)}</td>
+                    <td>${formatDateTime(pay.tanggal)}</td>
                     <td>Rp ${formatNumber(pay.amount)}</td>
                     <td>${pay.method}</td>
                     <td>${pay.note || '-'}</td>
-                    <td>Owner</td>
+                    <td>${updatedAtDisplay}</td>
                     <td>
-                        <button class="btn btn-danger btn-sm" onclick="deletePayment(${pay.id}, ${inv.id})" title="Hapus">
-                            <i class="fas fa-trash"></i>
+                        ${(isOwner || userRole === 'Admin') ? `
+                        <button class="btn btn-warning btn-sm" onclick="editPayment(${pay.id}, ${inv.id})" title="Edit">
+                            <i class="fas fa-edit"></i>
                         </button>
+                        ` : ''}
                     </td>
                 </tr>
             `;
@@ -422,18 +470,20 @@ function displayInvoiceDetail(inv) {
         <hr>
         <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="mb-0">Riwayat Pembayaran</h6>
+            ${inv.status_piutang !== 'Lunas' && (isOwner || userRole === 'Admin') ? `
             <button class="btn btn-success btn-sm" onclick="openPaymentModal(${inv.id}, ${inv.sisa_piutang})">
                 <i class="fas fa-plus"></i> Input Bayar
             </button>
+            ` : ''}
         </div>
         <table class="table table-bordered table-sm">
             <thead>
                 <tr>
-                    <th>Tanggal</th>
+                    <th>Tanggal & Jam</th>
                     <th>Jumlah</th>
                     <th>Metode</th>
                     <th>Catatan</th>
-                    <th>Oleh</th>
+                    <th>Di Update Pada</th>
                     <th width="10%">Aksi</th>
                 </tr>
             </thead>
@@ -521,6 +571,60 @@ $('#paymentForm').on('submit', function(e) {
             if (response.success) {
                 showAlert('success', response.message);
                 $('#paymentModal').modal('hide');
+                loadInvoices();
+                
+                // Jika modal detail terbuka, refresh detail
+                if ($('#detailModal').hasClass('show')) {
+                    viewDetail(currentInvoiceId);
+                }
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
+});
+
+// Edit payment - open modal with existing data
+function editPayment(paymentId, invoiceId) {
+    // Get payment data from invoice detail
+    $.ajax({
+        url: 'backend.php?action=read_one&id=' + invoiceId,
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                let payment = response.data.payments.find(p => p.id == paymentId);
+                if (payment) {
+                    currentInvoiceId = invoiceId;
+                    $('#edit_payment_id').val(payment.id);
+                    $('#edit_invoice_id').val(invoiceId);
+                    $('#edit_amount').val(payment.amount);
+                    $('#edit_payment_date').val(payment.tanggal);
+                    $('#edit_payment_method').val(payment.method);
+                    $('#edit_notes').val(payment.note || '');
+                    $('#editPaymentModal').modal('show');
+                }
+            }
+        }
+    });
+}
+
+// Submit edit payment form
+$('#editPaymentForm').on('submit', function(e) {
+    e.preventDefault();
+    
+    let formData = new FormData(this);
+    
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                $('#editPaymentModal').modal('hide');
                 loadInvoices();
                 
                 // Jika modal detail terbuka, refresh detail

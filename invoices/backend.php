@@ -213,8 +213,9 @@ elseif ($action === 'read_one') {
 
 // CREATE PAYMENT - Input cicilan baru
 elseif ($action === 'create_payment') {
-    if ($user_role !== 'Owner') {
-        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa input pembayaran']);
+    // Admin dan Owner bisa input pembayaran
+    if ($user_role !== 'Owner' && $user_role !== 'Admin') {
+        echo json_encode(['success' => false, 'message' => 'Anda tidak memiliki akses']);
         exit;
     }
     
@@ -292,6 +293,99 @@ elseif ($action === 'create_payment') {
         ]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal mencatat pembayaran: ' . mysqli_error($conn)]);
+    }
+}
+
+// EDIT PAYMENT - Update cicilan
+elseif ($action === 'edit_payment') {
+    // Admin dan Owner bisa edit pembayaran
+    if ($user_role !== 'Owner' && $user_role !== 'Admin') {
+        echo json_encode(['success' => false, 'message' => 'Anda tidak memiliki akses']);
+        exit;
+    }
+    
+    $payment_id = (int)$_POST['payment_id'];
+    $invoice_id = (int)$_POST['invoice_id'];
+    $new_amount = (float)$_POST['amount'];
+    $tanggal = $_POST['payment_date'];
+    $method = mysqli_real_escape_string($conn, $_POST['payment_method']);
+    $note = mysqli_real_escape_string($conn, $_POST['notes'] ?? '');
+    
+    if ($new_amount <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Jumlah pembayaran harus lebih dari 0']);
+        exit;
+    }
+    
+    // Get payment data lama
+    $sql_payment = "SELECT amount FROM payments WHERE id = $payment_id";
+    $result = mysqli_query($conn, $sql_payment);
+    $payment = mysqli_fetch_assoc($result);
+    
+    if (!$payment) {
+        echo json_encode(['success' => false, 'message' => 'Pembayaran tidak ditemukan']);
+        exit;
+    }
+    
+    $old_amount = (float)$payment['amount'];
+    
+    // Get invoice data
+    $sql_invoice = "SELECT total FROM invoices WHERE id = $invoice_id";
+    $result_invoice = mysqli_query($conn, $sql_invoice);
+    $invoice = mysqli_fetch_assoc($result_invoice);
+    
+    if (!$invoice) {
+        echo json_encode(['success' => false, 'message' => 'Invoice tidak ditemukan']);
+        exit;
+    }
+    
+    // Hitung total pembayaran (exclude yang sedang diedit)
+    $sql_paid = "SELECT COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE invoice_id = $invoice_id AND id != $payment_id";
+    $result_paid = mysqli_query($conn, $sql_paid);
+    $paid_data = mysqli_fetch_assoc($result_paid);
+    $total_paid_others = (float)$paid_data['total_paid'];
+    
+    // Total jika payment ini diupdate
+    $new_total_paid = $total_paid_others + $new_amount;
+    $sisa = $invoice['total'] - $new_total_paid;
+    
+    if ($sisa < 0) {
+        echo json_encode(['success' => false, 'message' => "Total pembayaran melebihi tagihan (Sisa akan menjadi negatif: Rp " . number_format(abs($sisa), 0, ',', '.') . ")"]);
+        exit;
+    }
+    
+    // Update payment
+    $sql = "UPDATE payments SET amount = $new_amount, tanggal = '$tanggal', method = '$method', note = '$note', updated_at = NOW() WHERE id = $payment_id";
+    
+    if (mysqli_query($conn, $sql)) {
+        // Update status piutang
+        $new_status = 'Belum Bayar';
+        $paid_at = 'NULL';
+        
+        if ($sisa <= 0) {
+            $new_status = 'Lunas';
+            $paid_at = "'$tanggal'";
+        } elseif ($new_total_paid > 0) {
+            $new_status = 'Sudah Dicicil';
+        }
+        
+        $sql_update = "UPDATE invoices SET status_piutang = '$new_status', paid_at = $paid_at WHERE id = $invoice_id";
+        mysqli_query($conn, $sql_update);
+        
+        // Audit log
+        $log_msg = "Pembayaran #$payment_id diupdate dari Rp " . number_format($old_amount, 0, ',', '.') . " menjadi Rp " . number_format($new_amount, 0, ',', '.') . " untuk Invoice #$invoice_id";
+        $sql_log = "INSERT INTO audit_logs (user_id, action, target_table, target_id, description, created_at)
+                    VALUES ({$_SESSION['user_id']}, 'UPDATE', 'payments', $payment_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())";
+        mysqli_query($conn, $sql_log);
+        
+        echo json_encode([
+            'success' => true, 
+            'message' => 'Pembayaran berhasil diupdate',
+            'new_status' => $new_status,
+            'new_total_paid' => $new_total_paid,
+            'new_sisa' => $sisa
+        ]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal mengupdate pembayaran: ' . mysqli_error($conn)]);
     }
 }
 
