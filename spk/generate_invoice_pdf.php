@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../config.php';
+require_once '../vendor/autoload.php'; // mPDF autoload
 
 // Pastikan user sudah login dan role Owner
 if (!isset($_SESSION['user_id'])) {
@@ -62,13 +63,34 @@ while ($svc = mysqli_fetch_assoc($result_services)) {
 
 $grand_total = $total_sparepart + $total_jasa;
 
-// Generate filename: nama_cust-nopol-jenis_mobil-tgl_spk
+// Generate filename: namacust_nopol_mobil_tglsekarang
 $customer_name_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['customer_name']);
 $nopol_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['nomor_polisi']);
 $jenis_mobil_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['merk'] . '_' . $spk['model']);
-$tanggal_clean = date('Ymd', strtotime($spk['tanggal']));
-$filename = $customer_name_clean . '-' . $nopol_clean . '-' . $jenis_mobil_clean . '-' . $tanggal_clean . '.pdf';
+$tanggal_clean = date('Ymd'); // Tanggal sekarang
+$filename = $customer_name_clean . '_' . $nopol_clean . '_' . $jenis_mobil_clean . '_' . $tanggal_clean . '.pdf';
 
+// Initialize mPDF
+$mpdf = new \Mpdf\Mpdf([
+    'mode' => 'utf-8',
+    'format' => 'A4',
+    'margin_top' => 20,
+    'margin_bottom' => 30,
+    'margin_left' => 15,
+    'margin_right' => 15,
+    'margin_header' => 10,
+    'margin_footer' => 10
+]);
+
+// Set document properties
+$mpdf->SetTitle('Invoice ' . $spk['kode_unik_reference']);
+$mpdf->SetAuthor('Bengkel Mini ERP');
+
+// Set footer with page numbering - center aligned
+$mpdf->SetFooter('{PAGENO}');
+
+// Start output buffering to capture HTML
+ob_start();
 ?>
 <!DOCTYPE html>
 <html>
@@ -295,12 +317,11 @@ $filename = $customer_name_clean . '-' . $nopol_clean . '-' . $jenis_mobil_clean
         </div>
     </div>
 
-    <?php if (!empty($spk['saran_service'])): ?>
-    <div style="clear: both; margin-top: 30px; border: 1px solid #ddd; padding: 15px; background-color: #f9f9f9;">
-        <h4 style="margin-top: 0;">Saran Service:</h4>
-        <p style="margin: 0;"><?php echo nl2br(htmlspecialchars($spk['saran_service'])); ?></p>
+    <!-- Saran Service - Always show -->
+    <div style="clear: both; margin-top: 30px; border: 1px solid #000; padding: 15px; background-color: #f9f9f9;">
+        <h4 style="margin-top: 0; margin-bottom: 10px;">Saran Service:</h4>
+        <p style="margin: 0; min-height: 60px;"><?php echo !empty($spk['saran_service']) ? nl2br(htmlspecialchars($spk['saran_service'])) : '-'; ?></p>
     </div>
-    <?php endif; ?>
 
     <div style="clear: both; margin-top: 80px;">
         <table width="100%">
@@ -325,12 +346,15 @@ $filename = $customer_name_clean . '-' . $nopol_clean . '-' . $jenis_mobil_clean
         <p>Terima kasih atas kepercayaan Anda | Printed: <?php echo date('d/m/Y H:i:s'); ?></p>
     </div>
 
-    <script>
-        // Set filename and auto print when page loads
-        document.title = '<?php echo $filename; ?>';
-        window.onload = function() {
-            window.print();
-        }
-    </script>
 </body>
 </html>
+<?php
+// Get the buffered HTML content
+$html = ob_get_clean();
+
+// Write HTML to mPDF
+$mpdf->WriteHTML($html);
+
+// Output PDF to browser
+$mpdf->Output($filename, 'I');
+?>

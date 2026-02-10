@@ -138,9 +138,9 @@
                     </a>
                 </li>
                 <?php
-                // Menu Invoice hanya untuk Owner
+                // Menu Invoice untuk Owner dan Admin
                 $user_role = $_SESSION['role'] ?? 'Admin';
-                if ($user_role === 'Owner'):
+                if ($user_role === 'Owner' || $user_role === 'Admin'):
                 ?>
                 <li class="nav-item">
                     <a class="nav-link" href="../invoices/index.php">
