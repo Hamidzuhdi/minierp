@@ -135,6 +135,13 @@ elseif ($action === 'read_one') {
         
         $row['services'] = $services;
         
+        // Hitung total biaya jasa dari services
+        $total_biaya_jasa = 0;
+        foreach ($services as $svc) {
+            $total_biaya_jasa += (float)($svc['subtotal'] ?? 0);
+        }
+        $row['biaya_jasa'] = $total_biaya_jasa;
+        
         // Get warehouse requests
         $sql_warehouse = "SELECT wo.*, sp.nama as sparepart_name, u.username as requested_by_name
                          FROM warehouse_out wo
