@@ -70,6 +70,14 @@ $jenis_mobil_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['merk'] . '_' . $s
 $tanggal_clean = date('Ymd'); // Tanggal sekarang
 $filename = $customer_name_clean . '_' . $nopol_clean . '_' . $jenis_mobil_clean . '_' . $tanggal_clean . '.pdf';
 
+// Logo path - convert to base64 for mPDF
+$logo_path = __DIR__ . '/../caricon.png';
+$logo_base64 = '';
+if (file_exists($logo_path)) {
+    $logo_data = file_get_contents($logo_path);
+    $logo_base64 = 'data:image/png;base64,' . base64_encode($logo_data);
+}
+
 // Initialize mPDF
 $mpdf = new \Mpdf\Mpdf([
     'mode' => 'utf-8',
@@ -104,17 +112,40 @@ ob_start();
             margin: 20px;
         }
         .header {
-            text-align: center;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #000;
+            margin-bottom: 20px;
+            border-bottom: 3px solid #000;
             padding-bottom: 10px;
+            display: table;
+            width: 100%;
         }
-        .header h1 {
-            margin: 0;
-            font-size: 24px;
+        .header-logo {
+            display: table-cell;
+            width: 100px;
+            vertical-align: middle;
+            padding-right: 15px;
         }
-        .header p {
-            margin: 5px 0;
+        .header-logo img {
+            width: 80px;
+            height: auto;
+        }
+        .header-content {
+            display: table-cell;
+            vertical-align: middle;
+        }
+        .header-content h1 {
+            margin: 0 0 5px 0;
+            font-size: 22px;
+            color: #000;
+            font-weight: bold;
+        }
+        .header-content p {
+            margin: 2px 0;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .header-content .contact-info {
+            font-size: 10px;
+            color: #333;
         }
         .info-section {
             margin-bottom: 20px;
@@ -184,9 +215,19 @@ ob_start();
 </head>
 <body>
     <div class="header">
-        <h1>BENGKEL MINI ERP</h1>
-        <p>Jl. Contoh No. 123, Jakarta</p>
-        <p>Telp: (021) 1234-5678 | Email: info@bengkel.com</p>
+        <div class="header-logo">
+            <?php if (!empty($logo_base64)): ?>
+            <img src="<?php echo $logo_base64; ?>" alt="Logo">
+            <?php endif; ?>
+        </div>
+        <div class="header-content">
+            <h1>BENGKEL MINI ERP</h1>
+            <p>Jl. Gayungsari Bar. I No.12, Kebonsari, Kec. Gayungan, Surabaya, Jawa Timur 60233</p>
+            <p class="contact-info">
+                <strong>Admin Operasional:</strong> 0822-4484-1932 | 
+                <strong>Admin Finance:</strong> +62 822-2854-8800 / +62 819-4974-8881
+            </p>
+        </div>
     </div>
 
     <div class="info-section">
