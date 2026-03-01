@@ -770,9 +770,18 @@ function loadServicePrices() {
                 servicePricesCache = response.data;
                 let options = '<option value="">Pilih Jasa...</option>';
                 response.data.forEach(function(service) {
-                    options += `<option value="${service.id}" data-price="${service.harga}">${service.nama_jasa} - Rp ${formatNumber(service.harga)}</option>`;
+                    options += `<option value="${service.id}" data-price="${service.harga}">${service.kode_jasa} - ${service.nama_jasa} - Rp ${formatNumber(service.harga)}</option>`;
                 });
                 $('#service_select').html(options);
+                
+                // Initialize Select2 for searchable dropdown
+                $('#service_select').select2({
+                    theme: 'bootstrap-5',
+                    placeholder: 'Cari by kode jasa atau nama jasa...',
+                    allowClear: true,
+                    width: '100%',
+                    dropdownParent: $('#analisaModal')
+                });
             }
         }
     });

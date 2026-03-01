@@ -28,13 +28,18 @@ include '../header.php';
                     </button>
                 </div>
                 <div class="card-body">
-                    <div class="mb-3">
-                        <select class="form-select" id="statusFilter">
-                            <option value="">Semua Status</option>
-                            <option value="Pending">Pending</option>
-                            <option value="Approved">Approved</option>
-                            <option value="Rejected">Rejected</option>
-                        </select>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <input type="text" class="form-control" id="searchSPK" placeholder="Cari by kode SPK...">
+                        </div>
+                        <div class="col-md-6">
+                            <select class="form-select" id="statusFilter">
+                                <option value="">Semua Status</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Approved">Approved</option>
+                                <option value="Rejected">Rejected</option>
+                            </select>
+                        </div>
                     </div>
                     
                     <div class="table-responsive">
@@ -160,6 +165,13 @@ $(document).ready(function() {
     
     $('#statusFilter').on('change', loadRequests);
     
+    // Search by SPK code
+    let searchTimeout;
+    $('#searchSPK').on('keyup', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(loadRequests, 500);
+    });
+    
     $('#sparepart_id').on('change', function() {
         let selectedOption = $(this).find(':selected');
         let stock = selectedOption.data('stock') || 0;
@@ -182,9 +194,10 @@ $(document).ready(function() {
 function loadRequests() {
     let status = $('#statusFilter').val();
     let spkId = $('#spk_id').val();
+    let searchSPK = $('#searchSPK').val();
     
     $.ajax({
-        url: 'backend.php?action=read&status=' + status + '&spk_id=' + spkId,
+        url: 'backend.php?action=read&status=' + status + '&spk_id=' + spkId + '&search_spk=' + encodeURIComponent(searchSPK),
         type: 'GET',
         dataType: 'json',
         success: function(response) {
@@ -206,10 +219,19 @@ function loadSpareparts() {
                 let options = '<option value="">-- Pilih Sparepart --</option>';
                 response.data.forEach(function(sp) {
                     options += `<option value="${sp.id}" data-stock="${sp.current_stock}" data-satuan="${sp.satuan}">
-                        ${sp.nama} (Stock: ${sp.current_stock} ${sp.satuan})
+                        ${sp.kode_sparepart} - ${sp.nama} (Stock: ${sp.current_stock} ${sp.satuan})
                     </option>`;
                 });
                 $('#sparepart_id').html(options);
+                
+                // Initialize Select2 for searchable dropdown
+                $('#sparepart_id').select2({
+                    theme: 'bootstrap-5',
+                    placeholder: 'Cari by kode atau nama sparepart...',
+                    allowClear: true,
+                    width: '100%',
+                    dropdownParent: $('#requestModal')
+                });
             }
         }
     });

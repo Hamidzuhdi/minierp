@@ -58,6 +58,7 @@ if ($action === 'create') {
 elseif ($action === 'read') {
     $status = $_GET['status'] ?? '';
     $spk_id = $_GET['spk_id'] ?? '';
+    $search_spk = $_GET['search_spk'] ?? '';
     
     $sql = "SELECT wo.*, 
             sp.nama as sparepart_name, sp.satuan, sp.current_stock,
@@ -79,6 +80,11 @@ elseif ($action === 'read') {
     
     if (!empty($spk_id)) {
         $conditions[] = "wo.spk_id = " . (int)$spk_id;
+    }
+    
+    if (!empty($search_spk)) {
+        $search_spk = mysqli_real_escape_string($conn, $search_spk);
+        $conditions[] = "s.kode_unik_reference LIKE '%$search_spk%'";
     }
     
     if (count($conditions) > 0) {
