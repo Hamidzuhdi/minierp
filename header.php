@@ -115,11 +115,6 @@
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="../vehicles/index.php">
-                        <i class="fas fa-car"></i> Vehicles
-                    </a>
-                </li>
-                <li class="nav-item">
                     <a class="nav-link" href="../spareparts/index.php">
                         <i class="fas fa-cog"></i> Spareparts
                     </a>

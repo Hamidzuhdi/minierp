@@ -14,6 +14,18 @@ include 'header.php';
 $user_role = $_SESSION['role'];
 $is_owner = ($user_role === 'Owner');
 
+// Cek sparepart dengan harga jual < harga beli
+$price_alert_query = "SELECT id, kode_sparepart, nama, harga_beli_default, harga_jual_default 
+                       FROM spareparts 
+                       WHERE harga_jual_default < harga_beli_default 
+                       ORDER BY nama";
+$price_alert_result = mysqli_query($conn, $price_alert_query);
+$price_alert_items = [];
+while ($row = mysqli_fetch_assoc($price_alert_result)) {
+    $price_alert_items[] = $row;
+}
+$price_alert_count = count($price_alert_items);
+
 // =============================================
 // 1. DASHBOARD OPERASIONAL (Admin & Owner)
 // =============================================
@@ -72,6 +84,62 @@ if ($is_owner) {
             <p class="text-muted">Role: <strong><?php echo $user_role; ?></strong></p>
         </div>
     </div>
+    
+    <!-- Notifikasi Harga Alert -->
+    <?php if ($price_alert_count > 0): ?>
+    <div class="row mb-4">
+        <div class="col-12">
+            <?php if ($is_owner): ?>
+            <!-- Notifikasi Detail untuk Owner -->
+            <div class="card border-danger shadow-sm">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Peringatan Harga Jual!</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong><?php echo $price_alert_count; ?> sparepart</strong> memiliki harga jual yang lebih rendah dari harga beli (rugi):</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Kode</th>
+                                    <th>Nama Sparepart</th>
+                                    <th>Harga Beli</th>
+                                    <th>Harga Jual</th>
+                                    <th>Selisih</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($price_alert_items as $item): ?>
+                                <tr>
+                                    <td><?php echo $item['kode_sparepart']; ?></td>
+                                    <td><?php echo $item['nama']; ?></td>
+                                    <td>Rp <?php echo number_format($item['harga_beli_default'], 0, ',', '.'); ?></td>
+                                    <td>Rp <?php echo number_format($item['harga_jual_default'], 0, ',', '.'); ?></td>
+                                    <td class="text-danger fw-bold">-Rp <?php echo number_format($item['harga_beli_default'] - $item['harga_jual_default'], 0, ',', '.'); ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-3">
+                        <a href="spareparts/index.php" class="btn btn-danger"><i class="fas fa-edit"></i> Perbaiki Harga Sekarang</a>
+                    </div>
+                </div>
+            </div>
+            <?php else: ?>
+            <!-- Notifikasi Simple untuk Admin -->
+            <div class="card border-warning shadow-sm">
+                <div class="card-header bg-warning">
+                    <h6 class="mb-0"><i class="fas fa-exclamation-circle"></i> Perhatian</h6>
+                </div>
+                <div class="card-body">
+                    <p class="mb-0">Ada <strong><?php echo $price_alert_count; ?> sparepart</strong> dengan harga jual lebih rendah dari harga beli. Silakan hubungi Owner untuk perbaikan harga.</p>
+                </div>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
     
     <!-- ============================================= -->
     <!-- 1. DASHBOARD OPERASIONAL (Admin & Owner) -->

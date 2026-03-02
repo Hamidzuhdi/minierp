@@ -14,11 +14,12 @@ include '../header.php';
 // Cek role untuk hide/show kolom harga
 $user_role = $_SESSION['role'] ?? 'Admin';
 $is_owner = ($user_role === 'Owner');
+$is_admin = ($user_role === 'Admin');
 ?>
 
-<?php if (!$is_owner): ?>
+<?php if ($is_admin): ?>
 <style>
-    .price-column {
+    .buy-price-column {
         display: none !important;
     }
 </style>
@@ -57,8 +58,8 @@ $is_owner = ($user_role === 'Owner');
                                     <th>Nama</th>
                                     <th>Barcode</th>
                                     <th>Satuan</th>
-                                    <th class="price-column">Harga Beli</th>
-                                    <th class="price-column">Harga Jual</th>
+                                    <th class="buy-price-column">Harga Beli</th>
+                                    <th>Harga Jual</th>
                                     <th>Stock</th>
                                     <th>Min Stock</th>
                                     <th>Aksi</th>
@@ -228,8 +229,8 @@ function displaySpareparts(spareparts) {
                     <td>${sp.nama}</td>
                     <td>${sp.barcode || '-'}</td>
                     <td>${sp.satuan}</td>
-                    <td class="price-column">Rp ${formatNumber(sp.harga_beli_default)}</td>
-                    <td class="price-column">Rp ${formatNumber(sp.harga_jual_default)}</td>
+                    <td class="buy-price-column">Rp ${formatNumber(sp.harga_beli_default)}</td>
+                    <td>Rp ${formatNumber(sp.harga_jual_default)}</td>
                     <td class="${stockClass}">${stockIcon}${currentStock}</td>
                     <td>${minStock}</td>
                     <td>

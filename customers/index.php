@@ -34,7 +34,7 @@ include '../header.php';
                                     <th>Nama</th>
                                     <th>Telepon</th>
                                     <th>Alamat</th>
-                                    <th>Dibuat</th>
+                                    <th>Kendaraan</th>
                                     <th>Aksi</th>
                                 </tr>
                             </thead>
@@ -53,7 +53,7 @@ include '../header.php';
 
 <!-- Modal Add/Edit Customer -->
 <div class="modal fade" id="customerModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="customerModalTitle">Tambah Customer</h5>
@@ -64,19 +64,126 @@ include '../header.php';
                     <input type="hidden" id="customerId" name="id">
                     <input type="hidden" id="formAction" name="action" value="create">
                     
-                    <div class="mb-3">
-                        <label for="name" class="form-label">Nama Customer *</label>
-                        <input type="text" class="form-control" id="name" name="name" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="phone" class="form-label">Telepon</label>
-                        <input type="text" class="form-control" id="phone" name="phone">
+                    <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-user"></i> Data Customer</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Nama Customer *</label>
+                                <input type="text" class="form-control" id="name" name="name" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="phone" class="form-label">Telepon</label>
+                                <input type="text" class="form-control" id="phone" name="phone">
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
                         <label for="address" class="form-label">Alamat</label>
-                        <textarea class="form-control" id="address" name="address" rows="3"></textarea>
+                        <textarea class="form-control" id="address" name="address" rows="2"></textarea>
+                    </div>
+                    
+                    <hr>
+                    
+                    <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-car"></i> Data Kendaraan (Opsional)</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="nomor_polisi" class="form-label">Nomor Polisi</label>
+                                <input type="text" class="form-control text-uppercase" id="nomor_polisi" name="nomor_polisi" placeholder="B 1234 XYZ">
+                                <small class="text-muted">Kosongkan jika tidak ada kendaraan</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="merk" class="form-label">Merk</label>
+                                <input type="text" class="form-control" id="merk" name="merk" placeholder="Toyota, Honda, dll">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="model" class="form-label">Model</label>
+                                <input type="text" class="form-control" id="model" name="model" placeholder="Avanza, Jazz, dll">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="tahun" class="form-label">Tahun</label>
+                                <input type="number" class="form-control" id="tahun" name="tahun" placeholder="2020" min="1900" max="2100">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="note" class="form-label">Catatan Kendaraan</label>
+                        <textarea class="form-control" id="note" name="note" rows="2" placeholder="Warna, kondisi, atau catatan lainnya"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Detail Customer & Vehicles -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Detail Customer & Kendaraan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detailContent">
+                <!-- Content loaded via AJAX -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Tambah Kendaraan -->
+<div class="modal fade" id="addVehicleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Tambah Kendaraan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addVehicleForm">
+                <div class="modal-body">
+                    <input type="hidden" id="vehicle_customer_id" name="customer_id">
+                    <input type="hidden" name="action" value="add_vehicle">
+                    
+                    <div class="mb-3">
+                        <label for="vehicle_nomor_polisi" class="form-label">Nomor Polisi *</label>
+                        <input type="text" class="form-control text-uppercase" id="vehicle_nomor_polisi" name="nomor_polisi" required placeholder="B 1234 XYZ">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="vehicle_merk" class="form-label">Merk</label>
+                        <input type="text" class="form-control" id="vehicle_merk" name="merk" placeholder="Toyota, Honda, dll">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="vehicle_model" class="form-label">Model</label>
+                        <input type="text" class="form-control" id="vehicle_model" name="model" placeholder="Avanza, Jazz, dll">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="vehicle_tahun" class="form-label">Tahun</label>
+                        <input type="number" class="form-control" id="vehicle_tahun" name="tahun" placeholder="2020" min="1900" max="2100">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="vehicle_note" class="form-label">Catatan</label>
+                        <textarea class="form-control" id="vehicle_note" name="note" rows="2" placeholder="Warna, kondisi, dll"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -134,14 +241,22 @@ function displayCustomers(customers) {
         html = '<tr><td colspan="6" class="text-center">Belum ada data customer</td></tr>';
     } else {
         customers.forEach(function(customer) {
+            let vehicleInfo = '-';
+            if (customer.vehicles && customer.vehicles.length > 0) {
+                vehicleInfo = customer.vehicles.map(v => `<span class="badge bg-primary">${v.nomor_polisi} - ${v.model || v.merk || 'N/A'}</span>`).join(' ');
+            }
+            
             html += `
                 <tr>
                     <td>${customer.id}</td>
                     <td>${customer.name}</td>
                     <td>${customer.phone || '-'}</td>
                     <td>${customer.address ? (customer.address.length > 50 ? customer.address.substring(0, 50) + '...' : customer.address) : '-'}</td>
-                    <td>${formatDateTime(customer.created_at)}</td>
+                    <td>${vehicleInfo}</td>
                     <td>
+                        <button class="btn btn-info btn-sm" onclick="viewCustomerDetail(${customer.id})" title="Detail & Kendaraan">
+                            <i class="fas fa-eye"></i>
+                        </button>
                         <button class="btn btn-warning btn-sm" onclick="editCustomer(${customer.id})">
                             <i class="fas fa-edit"></i>
                         </button>
@@ -163,6 +278,62 @@ function openAddModal() {
     $('#customerForm')[0].reset();
     $('#customerId').val('');
     $('#formAction').val('create');
+    $('#nomor_polisi').val('');
+    $('#merk').val('');
+    $('#model').val('');
+    $('#tahun').val('');
+    $('#note').val('');
+}
+
+// View customer detail with vehicles
+function viewCustomerDetail(id) {
+    $.ajax({
+        url: 'backend.php?action=read_one_with_vehicles&id=' + id,
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                let customer = response.data.customer;
+                let vehicles = response.data.vehicles || [];
+                
+                let html = `
+                    <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-user"></i> Informasi Customer</h6>
+                    <table class="table table-sm">
+                        <tr><th width="30%">Nama:</th><td>${customer.name}</td></tr>
+                        <tr><th>Telepon:</th><td>${customer.phone || '-'}</td></tr>
+                        <tr><th>Alamat:</th><td>${customer.address || '-'}</td></tr>
+                        <tr><th>Dibuat:</th><td>${formatDateTime(customer.created_at)}</td></tr>
+                    </table>
+                    
+                    <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="fas fa-car"></i> Kendaraan Terdaftar</h6>
+                `;
+                
+                if (vehicles.length > 0) {
+                    html += '<div class="table-responsive"><table class="table table-bordered table-sm">';
+                    html += '<thead><tr><th>Nomor Polisi</th><th>Merk</th><th>Model</th><th>Tahun</th><th>Catatan</th></tr></thead><tbody>';
+                    vehicles.forEach(function(v) {
+                        html += `
+                            <tr>
+                                <td><strong>${v.nomor_polisi}</strong></td>
+                                <td>${v.merk || '-'}</td>
+                                <td>${v.model || '-'}</td>
+                                <td>${v.tahun || '-'}</td>
+                                <td>${v.note || '-'}</td>
+                            </tr>
+                        `;
+                    });
+                    html += '</tbody></table></div>';
+                } else {
+                    html += '<div class="alert alert-info">Belum ada kendaraan terdaftar untuk customer ini.</div>';
+                }
+                
+                $('#detailContent').html(html);
+                $('#detailModal').modal('show');
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
 }
 
 // Edit customer
@@ -174,7 +345,7 @@ function editCustomer(id) {
         success: function(response) {
             if (response.success) {
                 let customer = response.data;
-                $('#customerModalTitle').text('Edit Customer');
+                $('#customerModalTitle').html('Edit Customer <button type="button" class="btn btn-sm btn-success ms-2" onclick="openAddVehicleModal(' + customer.id + ')"><i class="fas fa-plus"></i> Tambah Kendaraan</button>');
                 $('#customerId').val(customer.id);
                 $('#name').val(customer.name);
                 $('#phone').val(customer.phone);
@@ -187,6 +358,36 @@ function editCustomer(id) {
         }
     });
 }
+
+// Open add vehicle modal
+function openAddVehicleModal(customerId) {
+    $('#vehicle_customer_id').val(customerId);
+    $('#addVehicleForm')[0].reset();
+    $('#vehicle_customer_id').val(customerId); // Set lagi after reset
+    $('#customerModal').modal('hide');
+    $('#addVehicleModal').modal('show');
+}
+
+// Submit add vehicle form
+$('#addVehicleForm').on('submit', function(e) {
+    e.preventDefault();
+    
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: $(this).serialize(),
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                $('#addVehicleModal').modal('hide');
+                loadCustomers();
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
+});
 
 // Hapus customer
 function deleteCustomer(id, name) {
