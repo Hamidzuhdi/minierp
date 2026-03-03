@@ -55,6 +55,7 @@ if ($action === 'create') {
 elseif ($action === 'read') {
     $search = $_GET['search'] ?? '';
     $status = $_GET['status'] ?? '';
+    $vehicle_id = $_GET['vehicle_id'] ?? '';
     
     $sql = "SELECT s.*, 
             c.name as customer_name, c.phone as customer_phone,
@@ -73,6 +74,11 @@ elseif ($action === 'read') {
     if (!empty($status)) {
         $status = mysqli_real_escape_string($conn, $status);
         $conditions[] = "s.status_spk = '$status'";
+    }
+    
+    if (!empty($vehicle_id)) {
+        $vehicle_id = (int)$vehicle_id;
+        $conditions[] = "s.vehicle_id = $vehicle_id";
     }
     
     if (count($conditions) > 0) {
@@ -195,6 +201,22 @@ elseif ($action === 'get_vehicles') {
     echo json_encode(['success' => true, 'data' => $vehicles]);
 }
 
+// GET ALL VEHICLES FOR FILTER (with customer name)
+elseif ($action === 'get_all_vehicles') {
+    $sql = "SELECT v.id, v.nomor_polisi, v.merk, v.model, c.name as customer_name 
+            FROM vehicles v
+            JOIN customers c ON v.customer_id = c.id
+            ORDER BY c.name ASC, v.nomor_polisi ASC";
+    $result = mysqli_query($conn, $sql);
+    
+    $vehicles = [];
+    while ($row = mysqli_fetch_assoc($result)) {
+        $vehicles[] = $row;
+    }
+    
+    echo json_encode(['success' => true, 'data' => $vehicles]);
+}
+
 // UPDATE - Mekanik Input Analisa & Estimasi
 elseif ($action === 'update_analisa') {
     $id = (int)$_POST['id'];
@@ -280,6 +302,75 @@ elseif ($action === 'delete_service') {
         echo json_encode(['success' => true, 'message' => 'Service berhasil dihapus']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal menghapus service: ' . mysqli_error($conn)]);
+    }
+}
+
+// GET ALL SPAREPARTS FOR DROPDOWN
+elseif ($action === 'get_all_spareparts') {
+    $sql = "SELECT id, kode_sparepart, nama, satuan, stok, harga_jual_default 
+            FROM spareparts 
+            WHERE stok > 0
+            ORDER BY nama ASC";
+    $result = mysqli_query($conn, $sql);
+    
+    $spareparts = [];
+    while ($row = mysqli_fetch_assoc($result)) {
+        $spareparts[] = $row;
+    }
+    
+    echo json_encode(['success' => true, 'data' => $spareparts]);
+}
+
+// ADD SPAREPART TO SPK
+elseif ($action === 'add_sparepart') {
+    $spk_id = (int)$_POST['spk_id'];
+    $sparepart_id = (int)$_POST['sparepart_id'];
+    $qty = (int)$_POST['qty'];
+    
+    // Check stock availability
+    $check_stock = mysqli_query($conn, "SELECT stok FROM spareparts WHERE id = $sparepart_id");
+    $stock = mysqli_fetch_assoc($check_stock);
+    
+    if ($stock['stok'] < $qty) {
+        echo json_encode(['success' => false, 'message' => 'Stok tidak mencukupi. Stok tersedia: ' . $stock['stok']]);
+        exit;
+    }
+    
+    // Add to spk_items
+    $sql = "INSERT INTO spk_items (spk_id, sparepart_id, qty) 
+            VALUES ($spk_id, $sparepart_id, $qty)";
+    
+    if (mysqli_query($conn, $sql)) {
+        // Decrease stock
+        mysqli_query($conn, "UPDATE spareparts SET stok = stok - $qty WHERE id = $sparepart_id");
+        echo json_encode(['success' => true, 'message' => 'Sparepart berhasil ditambahkan ke SPK']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal menambahkan sparepart: ' . mysqli_error($conn)]);
+    }
+}
+
+// DELETE SPAREPART FROM SPK
+elseif ($action === 'delete_sparepart') {
+    $id = (int)$_POST['id'];
+    
+    // Get sparepart info to restore stock
+    $get_item = mysqli_query($conn, "SELECT sparepart_id, qty FROM spk_items WHERE id = $id");
+    $item = mysqli_fetch_assoc($get_item);
+    
+    if ($item) {
+        // Restore stock
+        mysqli_query($conn, "UPDATE spareparts SET stok = stok + {$item['qty']} WHERE id = {$item['sparepart_id']}");
+        
+        // Delete from spk_items
+        $sql = "DELETE FROM spk_items WHERE id = $id";
+        
+        if (mysqli_query($conn, $sql)) {
+            echo json_encode(['success' => true, 'message' => 'Sparepart berhasil dihapus']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Gagal menghapus sparepart: ' . mysqli_error($conn)]);
+        }
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Data tidak ditemukan']);
     }
 }
 

@@ -16,7 +16,7 @@ include '../header.php';
     <div class="row">
         <div class="col-12">
             <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
+                <!-- <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">
                         <i class="fas fa-dolly"></i> Request Barang Keluar Gudang
                         <?php if ($spk_id): ?>
@@ -26,7 +26,7 @@ include '../header.php';
                     <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#requestModal" onclick="openAddModal()">
                         <i class="fas fa-plus"></i> Request Barang Keluar
                     </button>
-                </div>
+                </div> -->
                 <div class="card-body">
                     <div class="row mb-3">
                         <div class="col-md-6">

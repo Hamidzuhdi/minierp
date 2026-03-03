@@ -138,13 +138,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 <hr class="my-4">
                 
-                <div class="text-center">
-                    <small class="text-muted">
-                        <strong>Default Login:</strong><br>
-                        Username: <code>admin</code><br>
-                        Password: <code>admin123</code>
-                    </small>
-                </div>
             </div>
         </div>
         

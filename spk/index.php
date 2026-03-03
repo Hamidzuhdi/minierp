@@ -35,10 +35,15 @@ $is_owner = ($user_role === 'Owner');
                 </div>
                 <div class="card-body">
                     <div class="row mb-3">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <input type="text" class="form-control" id="searchInput" placeholder="Cari kode SPK, customer, atau nomor polisi...">
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
+                            <select class="form-select" id="vehicleFilter">
+                                <option value="">Semua Kendaraan</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
                             <select class="form-select" id="statusFilter">
                                 <option value="">Semua Status</option>
                                 <option value="Menunggu Konfirmasi">Menunggu Konfirmasi</option>
@@ -212,6 +217,48 @@ $is_owner = ($user_role === 'Owner');
                                     </tr>
                                 </tfoot>
                             </table>
+                            
+                            <h6 class="mt-4">Sparepart</h6>
+                            <div class="card mb-3">
+                                <div class="card-body">
+                                    <div class="row g-2">
+                                        <div class="col-md-6">
+                                            <select class="form-select form-select-sm" id="sparepart_select">
+                                                <option value="">Pilih Sparepart...</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <input type="number" class="form-control form-control-sm" id="sparepart_qty" value="1" min="1" placeholder="Qty">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <button type="button" class="btn btn-success btn-sm w-100" onclick="addSparepartToSPK()">
+                                                <i class="fas fa-plus"></i> Tambah
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Sparepart</th>
+                                        <th>Qty</th>
+                                        <th>Harga</th>
+                                        <th>Subtotal</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sparepartListTable">
+                                    <tr><td colspan="5" class="text-center text-muted">Belum ada sparepart</td></tr>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <th colspan="3">Total Biaya Sparepart:</th>
+                                        <th colspan="2" id="totalSparepartCost">Rp 0</th>
+                                    </tr>
+                                </tfoot>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -233,6 +280,7 @@ const isOwner = (userRole === 'Owner');
 $(document).ready(function() {
     loadSPKs();
     loadCustomers();
+    loadAllVehiclesForFilter();
     
     $('#tanggal').val(new Date().toISOString().split('T')[0]);
     
@@ -243,6 +291,7 @@ $(document).ready(function() {
     });
     
     $('#statusFilter').on('change', loadSPKs);
+    $('#vehicleFilter').on('change', loadSPKs);
     
     // Load vehicles saat customer dipilih
     $('#customer_id').on('change', function() {
@@ -255,12 +304,38 @@ $(document).ready(function() {
     });
 });
 
+function loadAllVehiclesForFilter() {
+    $.ajax({
+        url: 'backend.php?action=get_all_vehicles',
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                let options = '<option value="">Semua Kendaraan</option>';
+                response.data.forEach(function(v) {
+                    options += `<option value="${v.id}">${v.customer_name} - ${v.nomor_polisi} - ${v.model || v.merk || 'N/A'}</option>`;
+                });
+                $('#vehicleFilter').html(options);
+                
+                // Initialize Select2 for searchable dropdown
+                $('#vehicleFilter').select2({
+                    theme: 'bootstrap-5',
+                    placeholder: 'Filter by kendaraan...',
+                    allowClear: true,
+                    width: '100%'
+                });
+            }
+        }
+    });
+}
+
 function loadSPKs() {
     let search = $('#searchInput').val();
     let status = $('#statusFilter').val();
+    let vehicleId = $('#vehicleFilter').val();
     
     $.ajax({
-        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status),
+        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&vehicle_id=' + encodeURIComponent(vehicleId),
         type: 'GET',
         dataType: 'json',
         success: function(response) {
@@ -501,7 +576,8 @@ function viewDetail(id) {
                             <tr>
                                 <th>Nama Sparepart</th>
                                 <th>Qty</th>
-                                ${isOwner ? '<th>Harga</th><th>Subtotal</th>' : ''}
+                                <th>Harga</th>
+                                <th>Subtotal</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -511,44 +587,27 @@ function viewDetail(id) {
                 if (spk.items && spk.items.length > 0) {
                     spk.items.forEach(function(item) {
                         let subtotal = parseFloat(item.subtotal) || 0;
-                        if (isOwner) {
-                            html += `
-                                <tr>
-                                    <td>${item.sparepart_name}</td>
-                                    <td>${item.qty} ${item.satuan}</td>
-                                    <td>Rp ${formatNumber(item.harga_jual_default)}</td>
-                                    <td>Rp ${formatNumber(subtotal)}</td>
-                                </tr>
-                            `;
-                        } else {
-                            html += `
-                                <tr>
-                                    <td>${item.sparepart_name}</td>
-                                    <td>${item.qty} ${item.satuan}</td>
-                                </tr>
-                            `;
-                        }
+                        html += `
+                            <tr>
+                                <td>${item.sparepart_name}</td>
+                                <td>${item.qty} ${item.satuan}</td>
+                                <td>Rp ${formatNumber(item.harga_jual_default)}</td>
+                                <td>Rp ${formatNumber(subtotal)}</td>
+                            </tr>
+                        `;
                         totalSparepart += subtotal;
                     });
                 } else {
-                    html += `<tr><td colspan="${isOwner ? '4' : '2'}" class="text-center">Belum ada sparepart</td></tr>`;
+                    html += `<tr><td colspan="4" class="text-center">Belum ada sparepart</td></tr>`;
                 }
                 
                 html += `
-                        </tbody>`;
-                
-                // Tampilkan footer hanya untuk Owner
-                if (isOwner) {
-                    html += `
+                        </tbody>
                         <tfoot>
                             <tr><th colspan="3">Total Sparepart:</th><th>Rp ${formatNumber(totalSparepart)}</th></tr>
                             <tr><th colspan="3">Total Jasa Service:</th><th>Rp ${formatNumber(totalJasa)}</th></tr>
                             <tr><th colspan="3">GRAND TOTAL:</th><th><strong>Rp ${formatNumber(totalSparepart + totalJasa)}</strong></th></tr>
                         </tfoot>
-                    `;
-                }
-                
-                html += `
                     </table>
                     
                     <hr>
@@ -563,41 +622,7 @@ function viewDetail(id) {
                         </button>
                         ` : ''}
                     </div>
-                    
-                    <hr>
-                    
-                    <h6>Request Barang Keluar Gudang</h6>
-                    <div class="mb-3">
-                        <a href="../warehouse_out/index.php?spk_id=${spk.id}" class="btn btn-primary btn-sm">
-                            <i class="fas fa-dolly"></i> Request Sparepart ke Gudang
-                        </a>
-                    </div>
                 `;
-                
-                if (spk.warehouse_requests && spk.warehouse_requests.length > 0) {
-                    html += `
-                        <table class="table table-bordered table-sm">
-                            <thead>
-                                <tr><th>Sparepart</th><th>Qty</th><th>Status</th><th>Request By</th></tr>
-                            </thead>
-                            <tbody>
-                    `;
-                    spk.warehouse_requests.forEach(function(wr) {
-                        let wrStatus = wr.status === 'Approved' ? 'success' : (wr.status === 'Rejected' ? 'danger' : 'warning');
-                        html += `
-                            <tr>
-                                <td>${wr.sparepart_name}</td>
-                                <td>${wr.qty}</td>
-                                <td><span class="badge bg-${wrStatus}">${wr.status}</span></td>
-                                <td>${wr.requested_by_name || '-'}</td>
-                            </tr>
-                        `;
-                    });
-                    html += '</tbody></table>';
-                } else {
-                    html += '<p class="text-muted">Belum ada request barang keluar</p>';
-                }
-                
                 $('#detailContent').html(html);
                 $('#detailModal').modal('show');
             }
@@ -622,6 +647,11 @@ function openAnalisaModal(id) {
                 loadSPKServices(spk.id);
                 // Load available service prices
                 loadServicePrices();
+                
+                // Load spareparts for this SPK
+                loadSPKSpareparts(spk.id);
+                // Load available spareparts
+                loadSpareparts();
                 
                 $('#analisaModal').modal('show');
             }
@@ -890,4 +920,145 @@ function deleteServiceFromSPK(serviceId) {
         }
     });
 }
+
+// ========== Sparepart Management Functions ==========
+let sparepartsCache = [];
+
+function loadSpareparts() {
+    $.ajax({
+        url: 'backend.php?action=get_all_spareparts',
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                sparepartsCache = response.data;
+                let options = '<option value="">Pilih Sparepart...</option>';
+                response.data.forEach(function(sp) {
+                    options += `<option value="${sp.id}" data-price="${sp.harga_jual_default}" data-stok="${sp.stok}">${sp.kode_sparepart} - ${sp.nama} (Stok: ${sp.stok}) - Rp ${formatNumber(sp.harga_jual_default)}</option>`;
+                });
+                $('#sparepart_select').html(options);
+                
+                // Initialize Select2 for searchable dropdown
+                $('#sparepart_select').select2({
+                    theme: 'bootstrap-5',
+                    placeholder: 'Cari by kode atau nama sparepart...',
+                    allowClear: true,
+                    width: '100%',
+                    dropdownParent: $('#analisaModal')
+                });
+            }
+        }
+    });
+}
+
+function loadSPKSpareparts(spkId) {
+    $.ajax({
+        url: 'backend.php?action=read_one&id=' + spkId,
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success && response.data.items) {
+                displaySparepartsList(response.data.items);
+            }
+        }
+    });
+}
+
+function displaySparepartsList(spareparts) {
+    let html = '';
+    let total = 0;
+    
+    if (spareparts && spareparts.length > 0) {
+        spareparts.forEach(function(sp) {
+            let subtotal = parseFloat(sp.subtotal) || 0;
+            total += subtotal;
+            html += `
+                <tr>
+                    <td>${sp.sparepart_name}</td>
+                    <td>${sp.qty} ${sp.satuan}</td>
+                    <td>Rp ${formatNumber(sp.harga_jual_default)}</td>
+                    <td>Rp ${formatNumber(subtotal)}</td>
+                    <td>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteSparepartFromSPK(${sp.id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+    } else {
+        html = '<tr><td colspan="5" class="text-center text-muted">Belum ada sparepart</td></tr>';
+    }
+    
+    $('#sparepartListTable').html(html);
+    $('#totalSparepartCost').html('Rp ' + formatNumber(total));
+}
+
+function addSparepartToSPK() {
+    const spkId = $('#analisa_spk_id').val();
+    const sparepartId = $('#sparepart_select').val();
+    const qty = parseInt($('#sparepart_qty').val()) || 1;
+    
+    if (!sparepartId) {
+        showAlert('warning', 'Pilih sparepart terlebih dahulu');
+        return;
+    }
+    
+    const selectedOption = $('#sparepart_select option:selected');
+    const stok = parseInt(selectedOption.data('stok'));
+    
+    if (qty > stok) {
+        showAlert('danger', 'Qty melebihi stok tersedia (' + stok + ')');
+        return;
+    }
+    
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: {
+            action: 'add_sparepart',
+            spk_id: spkId,
+            sparepart_id: sparepartId,
+            qty: qty
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                loadSPKSpareparts(spkId);
+                loadSpareparts(); // Reload to update stock
+                $('#sparepart_select').val('').trigger('change');
+                $('#sparepart_qty').val(1);
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
+}
+
+function deleteSparepartFromSPK(sparepartItemId) {
+    if (!confirm('Hapus sparepart ini? Stok akan dikembalikan.')) return;
+    
+    const spkId = $('#analisa_spk_id').val();
+    
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: {
+            action: 'delete_sparepart',
+            id: sparepartItemId
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                loadSPKSpareparts(spkId);
+                loadSpareparts(); // Reload to update stock
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
+}
 </script>
+

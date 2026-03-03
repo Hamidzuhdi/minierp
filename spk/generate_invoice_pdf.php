@@ -78,16 +78,16 @@ if (file_exists($logo_path)) {
     $logo_base64 = 'data:image/png;base64,' . base64_encode($logo_data);
 }
 
-// Initialize mPDF
+// Initialize mPDF - Optimized margins for 1 page fit
 $mpdf = new \Mpdf\Mpdf([
     'mode' => 'utf-8',
     'format' => 'A4',
-    'margin_top' => 20,
-    'margin_bottom' => 30,
-    'margin_left' => 15,
-    'margin_right' => 15,
-    'margin_header' => 10,
-    'margin_footer' => 10
+    'margin_top' => 10,
+    'margin_bottom' => 15,
+    'margin_left' => 10,
+    'margin_right' => 10,
+    'margin_header' => 5,
+    'margin_footer' => 8
 ]);
 
 // Set document properties
@@ -108,64 +108,58 @@ ob_start();
     <style>
         body {
             font-family: Arial, sans-serif;
-            font-size: 12px;
-            margin: 20px;
+            font-size: 10px;
+            margin: 10px;
         }
         .header {
-            margin-bottom: 20px;
-            border-bottom: 3px solid #000;
-            padding-bottom: 10px;
-            display: table;
-            width: 100%;
-        }
-        .header-logo {
-            display: table-cell;
-            width: 100px;
-            vertical-align: middle;
-            padding-right: 15px;
-        }
-        .header-logo img {
-            width: 80px;
-            height: auto;
-        }
-        .header-content {
-            display: table-cell;
-            vertical-align: middle;
-        }
-        .header-content h1 {
-            margin: 0 0 5px 0;
-            font-size: 22px;
-            color: #000;
-            font-weight: bold;
-        }
+    margin-bottom: 10px;
+    border-bottom: 2px solid #000;
+    padding-bottom: 8px;
+    width: 100%;
+    overflow: hidden;
+}
+
+.header-left {
+    float: right;
+    width: 70%;
+    text-align: right;
+}
+
+.header-right {
+    float: left;
+    width: 30%;
+}
+
+.header-right img {
+    width: 70px; /* Logo diperkecil */
+    height: auto;
+}
         .header-content p {
-            margin: 2px 0;
-            font-size: 11px;
-            line-height: 1.4;
-        }
-        .header-content .contact-info {
-            font-size: 10px;
-            color: #333;
+            margin: 1px 0;
+            font-size: 9px;
+            line-height: 1.3;
         }
         .info-section {
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
         .info-section table {
             width: 100%;
         }
         .info-section td {
-            padding: 3px 0;
+            padding: 2px 0;
+            font-size: 9px;
         }
         .items-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 20px 0;
+            margin: 8px 0;
         }
         .items-table th,
         .items-table td {
             border: 1px solid #000;
-            padding: 8px;
+            padding: 4px;
             text-align: left;
+            font-size: 9px;
         }
         .items-table th {
             background-color: #f0f0f0;
@@ -215,20 +209,19 @@ ob_start();
 </head>
 <body>
     <div class="header">
-        <div class="header-logo">
-            <?php if (!empty($logo_base64)): ?>
-            <img src="<?php echo $logo_base64; ?>" alt="Logo">
-            <?php endif; ?>
-        </div>
-        <div class="header-content">
-            <h1>BENGKEL MINI ERP</h1>
-            <p>Jl. Gayungsari Bar. I No.12, Kebonsari, Kec. Gayungan, Surabaya, Jawa Timur 60233</p>
-            <p class="contact-info">
-                <strong>Admin Operasional:</strong> 0822-4484-1932 | 
-                <strong>Admin Finance:</strong> +62 822-2854-8800 / +62 819-4974-8881
-            </p>
-        </div>
+    <div class="header-left">
+        <p><strong>Jl. Gayungsari Bar. I No.12, Kebonsari, Kec. Gayungan</strong></p>
+        <p><strong>Surabaya, Jawa Timur 60233</strong></p>
+        <p>Admin Operasional: 0822-4484-1932</p>
+        <p>Admin Finance: +62 822-2854-8800 / +62 819-4974-8881</p>
     </div>
+
+    <div class="header-right">
+        <?php if (!empty($logo_base64)): ?>
+        <img src="<?php echo $logo_base64; ?>" alt="Logo">
+        <?php endif; ?>
+    </div>
+</div>
 
     <div class="info-section">
         <table>
@@ -246,20 +239,14 @@ ob_start();
             </tr>
             <tr>
                 <td><strong>Alamat:</strong></td>
-                <td colspan="3"><?php echo $spk['customer_address'] ?? '-'; ?></td>
-            </tr>
-            <tr>
+                <td><?php echo $spk['customer_address'] ?? '-'; ?></td>
                 <td><strong>Kendaraan:</strong></td>
-                <td colspan="3"><?php echo $spk['nomor_polisi'] . ' - ' . $spk['merk'] . ' ' . $spk['model'] . ' (' . $spk['tahun'] . ')'; ?></td>
-            </tr>
-            <tr>
-                <td><strong>Keluhan:</strong></td>
-                <td colspan="3"><?php echo $spk['keluhan_customer']; ?></td>
+                <td><?php echo $spk['nomor_polisi'] . ' - ' . $spk['merk'] . ' ' . $spk['model'] . ' (' . $spk['tahun'] . ')'; ?></td>
             </tr>
         </table>
     </div>
 
-    <h3>Detail Pekerjaan Jasa Service</h3>
+    <h3 style="font-size: 11px; margin: 8px 0 5px 0;">Detail Pekerjaan Jasa Service</h3>
     <table class="items-table">
         <thead>
             <tr>
@@ -298,7 +285,7 @@ ob_start();
         </tbody>
     </table>
 
-    <h3 style="margin-top: 30px;">Detail Sparepart yang Digunakan</h3>
+    <h3 style="font-size: 11px; margin: 8px 0 5px 0;">Detail Sparepart yang Digunakan</h3>
     <table class="items-table">
         <thead>
             <tr>
@@ -358,26 +345,37 @@ ob_start();
         </div>
     </div>
 
-    <!-- Saran Service - Always show -->
-    <div style="clear: both; margin-top: 30px; border: 1px solid #000; padding: 15px; background-color: #f9f9f9;">
-        <h4 style="margin-top: 0; margin-bottom: 10px;">Saran Service:</h4>
-        <p style="margin: 0; min-height: 60px;"><?php echo !empty($spk['saran_service']) ? nl2br(htmlspecialchars($spk['saran_service'])) : '-'; ?></p>
+    <!-- Saran Service -->
+    <div style="clear: both; margin-top: 10px; border: 1px solid #000; padding: 8px; background-color: #f9f9f9;">
+        <h4 style="margin: 0 0 5px 0; font-size: 10px;">Saran Service:</h4>
+        <p style="margin: 0; font-size: 9px;"><?php echo !empty($spk['saran_service']) ? nl2br(htmlspecialchars($spk['saran_service'])) : '-'; ?></p>
     </div>
 
-    <div style="clear: both; margin-top: 80px;">
+    <!-- Bank Account Info -->
+    <div style="margin-top: 8px; padding: 8px; border: 1px solid #000; background-color: #f9f9f9;">
+        <h4 style="margin: 0 0 5px 0; font-size: 10px;">Informasi Pembayaran:</h4>
+        <p style="margin: 0; font-size: 9px;"><strong>Bank BCA:</strong> 1234567890 a.n. Bengkel Mini ERP</p>
+    </div>
+
+    <!-- Warranty Terms -->
+    <div style="margin-top: 8px; padding: 6px; border: 1px solid #000; background-color: #fff3cd; text-align: center;">
+        <p style="margin: 0; font-size: 9px; font-weight: bold;">⚠️ Semua service bergaransi selama 2 minggu</p>
+    </div>
+
+    <div style="clear: both; margin-top: 30px;">
         <table width="100%">
             <tr>
-                <td width="50%" style="text-align: center;">
-                    <p>Mengetahui,</p>
-                    <br><br><br>
-                    <p>____________________</p>
-                    <p>Customer</p>
+                <td width="50%" style="text-align: center; font-size: 9px;">
+                    <p style="margin: 0;">Mengetahui,</p>
+                    <br><br>
+                    <p style="margin: 0;">____________________</p>
+                    <p style="margin: 0;"><?php echo $spk['customer_name']; ?></p>
                 </td>
-                <td width="50%" style="text-align: center;">
-                    <p>Hormat Kami,</p>
-                    <br><br><br>
-                    <p>____________________</p>
-                    <p>Bengkel</p>
+                <td width="50%" style="text-align: center; font-size: 9px;">
+                    <p style="margin: 0;">Hormat Kami,</p>
+                    <br><br>
+                    <p style="margin: 0;">____________________</p>
+                    <p style="margin: 0;">Bengkel</p>
                 </td>
             </tr>
         </table>

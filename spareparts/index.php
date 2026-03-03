@@ -118,7 +118,12 @@ $is_admin = ($user_role === 'Admin');
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="satuan" class="form-label">Satuan</label>
-                                <input type="text" class="form-control" id="satuan" name="satuan" value="pcs">
+                                <select class="form-select" id="satuan" name="satuan">
+                                    <option value="Pcs">Pcs (Pieces)</option>
+                                    <option value="Pkt">Pkt (Paket)</option>
+                                    <option value="Lt">Lt (Liter)</option>
+                                    <option value="Gl">Gl (Galon)</option>
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -255,7 +260,7 @@ function openAddModal() {
     $('#sparepartForm')[0].reset();
     $('#sparepartId').val('');
     $('#formAction').val('create');
-    $('#satuan').val('pcs');
+    $('#satuan').val('Pcs');
     $('#harga_beli_default').val('0');
     $('#harga_jual_default').val('0');
     $('#min_stock').val('0');
