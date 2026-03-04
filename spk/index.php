@@ -64,7 +64,7 @@ $is_owner = ($user_role === 'Owner');
                                     <th>Tanggal</th>
                                     <th>Customer</th>
                                     <th>Kendaraan</th>
-                                    <th>Keluhan</th>
+                                    <th>Deskripsi</th>
                                     <th>Status</th>
                                     <th>Aksi</th>
                                 </tr>
@@ -398,7 +398,7 @@ function displaySPKs(spks) {
                     <td>${formatDate(spk.tanggal)}</td>
                     <td>${spk.customer_name}<br><small class="text-muted">${spk.customer_phone || ''}</small></td>
                     <td>${vehicle}</td>
-                    <td>${spk.keluhan_customer ? (spk.keluhan_customer.substring(0, 50) + '...') : '-'}</td>
+                    <td><small>${spk.service_description ? spk.service_description.split('\n').join('<br>') : '-'}</small></td>
                     <td>${statusBadge}</td>
                     <td>
                         <button class="btn btn-info btn-sm" onclick="viewDetail(${spk.id})" title="Detail">
