@@ -9,11 +9,16 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $user_role = $_SESSION['role'] ?? 'Admin';
-if ($user_role !== 'Owner') {
-    die('Hanya Owner yang dapat mengakses invoice PDF');
-}
-
 $spk_id = (int)$_GET['spk_id'];
+
+if ($user_role !== 'Owner') {
+    // Admin can access only if SPK status is 'Sudah Cetak Invoice'
+    $check_status = mysqli_query($conn, "SELECT status_spk FROM spk WHERE id = $spk_id");
+    $check_row = mysqli_fetch_assoc($check_status);
+    if (!$check_row || $check_row['status_spk'] !== 'Sudah Cetak Invoice') {
+        die('Hanya Owner yang dapat mengakses invoice PDF');
+    }
+}
 
 // Get SPK data
 $sql = "SELECT s.*, 

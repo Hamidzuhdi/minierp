@@ -106,6 +106,7 @@ if ($is_owner) {
                                     <th>Harga Beli</th>
                                     <th>Harga Jual</th>
                                     <th>Selisih</th>
+                                    <th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -116,13 +117,11 @@ if ($is_owner) {
                                     <td>Rp <?php echo number_format($item['harga_beli_default'], 0, ',', '.'); ?></td>
                                     <td>Rp <?php echo number_format($item['harga_jual_default'], 0, ',', '.'); ?></td>
                                     <td class="text-danger fw-bold">-Rp <?php echo number_format($item['harga_beli_default'] - $item['harga_jual_default'], 0, ',', '.'); ?></td>
+                                    <td><a href="spareparts/index.php?edit_id=<?php echo $item['id']; ?>" class="btn btn-danger btn-sm"><i class="fas fa-edit"></i> Perbaiki</a></td>
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
-                    </div>
-                    <div class="mt-3">
-                        <a href="spareparts/index.php" class="btn btn-danger"><i class="fas fa-edit"></i> Perbaiki Harga Sekarang</a>
                     </div>
                 </div>
             </div>
@@ -354,6 +353,240 @@ if ($is_owner) {
             </div>
         </div>
     </div>
+    <?php endif; ?>
+    
+    <!-- ========================================================= -->
+    <!-- FINANCIAL DASHBOARD (Owner Only) -->
+    <!-- ========================================================= -->
+    <?php if ($is_owner): ?>
+    <div class="row mb-3 mt-5">
+        <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-chart-bar text-success"></i> Dashboard Keuangan</h5>
+            <div class="d-flex align-items-center gap-2">
+                <label class="mb-0 fw-semibold">Filter Bulan:</label>
+                <select id="financeMonthFilter" class="form-select form-select-sm" style="width:180px;">
+                    <option value="">Semua Waktu</option>
+                    <?php
+                    for ($i = 0; $i < 24; $i++) {
+                        $m = date('Y-m', strtotime("-$i months"));
+                        echo '<option value="' . $m . '">' . date('F Y', strtotime($m . '-01')) . '</option>';
+                    }
+                    ?>
+                </select>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stat Cards -->
+    <div class="row g-3 mb-4" id="financeCardsRow">
+        <div class="col-md-2 col-sm-4">
+            <div class="card border-0 shadow-sm bg-primary text-white h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Revenue Jasa</div>
+                    <div class="fw-bold" id="fcRevenueJasa">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <div class="card border-0 shadow-sm bg-info text-white h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Revenue Sparepart</div>
+                    <div class="fw-bold" id="fcRevenueSpare">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <div class="card border-0 shadow-sm bg-warning text-dark h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">HPP Sparepart</div>
+                    <div class="fw-bold" id="fcHpp">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <div class="card border-0 shadow-sm bg-success text-white h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Profit Sparepart</div>
+                    <div class="fw-bold" id="fcProfit">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <div class="card border-0 shadow-sm bg-secondary text-white h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Total Revenue</div>
+                    <div class="fw-bold" id="fcTotalRevenue">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <div class="card border-0 shadow-sm bg-dark text-white h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Cashflow Masuk</div>
+                    <div class="fw-bold" id="fcCashflow">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Charts + Top Sparepart -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-7">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white fw-semibold">
+                    <i class="fas fa-chart-line text-primary"></i> Revenue & Profit per Bulan (12 Bulan Terakhir)
+                </div>
+                <div class="card-body">
+                    <canvas id="financeChart" height="120"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white fw-semibold">
+                    <i class="fas fa-trophy text-warning"></i> Top Sparepart by Profit
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr><th>Nama</th><th class="text-end">Profit</th></tr>
+                            </thead>
+                            <tbody id="topSparepartTable">
+                                <tr><td colspan="2" class="text-center text-muted py-3">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Transactions -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white fw-semibold">
+                    <i class="fas fa-history text-secondary"></i> Transaksi Invoice Terbaru
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Kode SPK</th>
+                                    <th>Tanggal</th>
+                                    <th>Customer</th>
+                                    <th>Kendaraan</th>
+                                    <th class="text-end">Total</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentTransTable">
+                                <tr><td colspan="6" class="text-center text-muted py-3">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+    let financeChart = null;
+    
+    function fcFormat(num) {
+        return 'Rp ' + parseFloat(num).toLocaleString('id-ID', {minimumFractionDigits: 0});
+    }
+    
+    function loadFinanceDashboard() {
+        let month = $('#financeMonthFilter').val();
+        $.ajax({
+            url: 'dashboard_finance_api.php',
+            data: { month: month },
+            dataType: 'json',
+            success: function(res) {
+                if (!res.success) return;
+                
+                // Update cards
+                $('#fcRevenueJasa').text(fcFormat(res.summary.revenue_jasa));
+                $('#fcRevenueSpare').text(fcFormat(res.summary.revenue_spare));
+                $('#fcHpp').text(fcFormat(res.summary.hpp_spare));
+                $('#fcProfit').text(fcFormat(res.summary.profit_spare));
+                $('#fcTotalRevenue').text(fcFormat(res.summary.total_revenue));
+                $('#fcCashflow').text(fcFormat(res.summary.cashflow_masuk));
+                
+                // Update chart
+                let labels = res.monthly.map(m => m.label);
+                let dataRevJasa = res.monthly.map(m => m.revenue_jasa);
+                let dataRevSpare = res.monthly.map(m => m.revenue_spare);
+                let dataProfit = res.monthly.map(m => m.profit);
+                
+                if (financeChart) financeChart.destroy();
+                financeChart = new Chart(document.getElementById('financeChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            { label: 'Revenue Jasa', data: dataRevJasa, backgroundColor: 'rgba(13,110,253,0.7)' },
+                            { label: 'Revenue Sparepart', data: dataRevSpare, backgroundColor: 'rgba(13,202,240,0.7)' },
+                            { label: 'Profit', data: dataProfit, type: 'line', borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', tension: 0.3, fill: true }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { position: 'top' } },
+                        scales: {
+                            y: { beginAtZero: true, ticks: { callback: v => 'Rp ' + v.toLocaleString('id-ID') } }
+                        }
+                    }
+                });
+                
+                // Update top sparepart table
+                let spHtml = '';
+                if (res.top_spareparts.length > 0) {
+                    res.top_spareparts.forEach(function(sp, i) {
+                        let profitColor = parseFloat(sp.total_profit) >= 0 ? 'text-success' : 'text-danger';
+                        spHtml += `<tr>
+                            <td><span class="badge bg-secondary me-1">${i+1}</span>${sp.nama}</td>
+                            <td class="text-end ${profitColor} fw-bold">${fcFormat(sp.total_profit)}</td>
+                        </tr>`;
+                    });
+                } else {
+                    spHtml = '<tr><td colspan="2" class="text-center text-muted">Belum ada data</td></tr>';
+                }
+                $('#topSparepartTable').html(spHtml);
+                
+                // Update recent transactions table
+                let rtHtml = '';
+                const statusColors = { 'Lunas': 'success', 'Sudah Dicicil': 'warning', 'Belum Bayar': 'danger' };
+                if (res.recent.length > 0) {
+                    res.recent.forEach(function(t) {
+                        let color = statusColors[t.status_piutang] || 'secondary';
+                        rtHtml += `<tr>
+                            <td><a href="spk/index.php">${t.kode_unik_reference}</a></td>
+                            <td>${t.tanggal}</td>
+                            <td>${t.customer_name}</td>
+                            <td>${t.nomor_polisi} ${t.model || ''}</td>
+                            <td class="text-end">${fcFormat(t.total)}</td>
+                            <td><span class="badge bg-${color}">${t.status_piutang}</span></td>
+                        </tr>`;
+                    });
+                } else {
+                    rtHtml = '<tr><td colspan="6" class="text-center text-muted">Belum ada data</td></tr>';
+                }
+                $('#recentTransTable').html(rtHtml);
+            }
+        });
+    }
+    
+    $(document).ready(function() {
+        loadFinanceDashboard();
+        $('#financeMonthFilter').on('change', loadFinanceDashboard);
+    });
+    </script>
     <?php endif; ?>
     
     <!-- Quick Access Links -->

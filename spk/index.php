@@ -613,9 +613,11 @@ function viewDetail(id) {
                     <hr>
                     
                     <div class="mb-3">
+                        ${(isOwner || spk.status_spk === 'Sudah Cetak Invoice') ? `
                         <button class="btn btn-danger btn-lg" onclick="downloadInvoicePDF(${spk.id})">
                             <i class="fas fa-file-pdf"></i> Cetak / Download Invoice PDF
                         </button>
+                        ` : ''}
                         ${isOwner && spk.status_spk !== 'Sudah Cetak Invoice' ? `
                         <button class="btn btn-success btn-lg" onclick="createInvoiceFromSPK(${spk.id})">
                             <i class="fas fa-check-circle"></i> Cetak PDF & Tandai Selesai

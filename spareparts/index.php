@@ -362,4 +362,16 @@ function showAlert(type, message) {
         });
     }, 3000);
 }
+
+// Auto-open edit modal if edit_id param is in URL
+$(document).ready(function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const editId = urlParams.get('edit_id');
+    if (editId) {
+        // Wait for spareparts to load then open modal
+        setTimeout(function() {
+            editSparepart(editId);
+        }, 600);
+    }
+});
 </script>

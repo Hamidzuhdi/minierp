@@ -113,11 +113,25 @@ elseif ($action === 'read_one') {
     
     if ($row = mysqli_fetch_assoc($result)) {
         // Get SPK items
-        $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
-                      (si.qty * sp.harga_jual_default) as subtotal
-                      FROM spk_items si
-                      JOIN spareparts sp ON si.sparepart_id = sp.id
-                      WHERE si.spk_id = $id";
+        // Check if harga_satuan column exists after migration
+        $col_check = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
+        $has_price_cols = mysqli_num_rows($col_check) > 0;
+        
+        if ($has_price_cols) {
+            $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
+                          COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) as harga_satuan_eff,
+                          (si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as subtotal
+                          FROM spk_items si
+                          JOIN spareparts sp ON si.sparepart_id = sp.id
+                          WHERE si.spk_id = $id";
+        } else {
+            $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
+                          sp.harga_jual_default as harga_satuan_eff,
+                          (si.qty * sp.harga_jual_default) as subtotal
+                          FROM spk_items si
+                          JOIN spareparts sp ON si.sparepart_id = sp.id
+                          WHERE si.spk_id = $id";
+        }
         $result_items = mysqli_query($conn, $sql_items);
         
         $items = [];
@@ -327,8 +341,8 @@ elseif ($action === 'add_sparepart') {
     $sparepart_id = (int)$_POST['sparepart_id'];
     $qty = (int)$_POST['qty'];
     
-    // Check stock availability
-    $check_stock = mysqli_query($conn, "SELECT stok FROM spareparts WHERE id = $sparepart_id");
+    // Check stock availability + get price snapshot
+    $check_stock = mysqli_query($conn, "SELECT stok, harga_jual_default, harga_beli_default FROM spareparts WHERE id = $sparepart_id");
     $stock = mysqli_fetch_assoc($check_stock);
     
     if ($stock['stok'] < $qty) {
@@ -336,9 +350,20 @@ elseif ($action === 'add_sparepart') {
         exit;
     }
     
-    // Add to spk_items
-    $sql = "INSERT INTO spk_items (spk_id, sparepart_id, qty) 
-            VALUES ($spk_id, $sparepart_id, $qty)";
+    $harga_satuan = (float)$stock['harga_jual_default'];
+    $hpp_satuan = (float)$stock['harga_beli_default'];
+    
+    // Check if harga_satuan column exists (after migration)
+    $col_check = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
+    $has_cols = mysqli_num_rows($col_check) > 0;
+    
+    if ($has_cols) {
+        $sql = "INSERT INTO spk_items (spk_id, sparepart_id, qty, harga_satuan, hpp_satuan) 
+                VALUES ($spk_id, $sparepart_id, $qty, $harga_satuan, $hpp_satuan)";
+    } else {
+        $sql = "INSERT INTO spk_items (spk_id, sparepart_id, qty) 
+                VALUES ($spk_id, $sparepart_id, $qty)";
+    }
     
     if (mysqli_query($conn, $sql)) {
         // Decrease stock
