@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../config.php';
+require_once '../finance_helper.php';
 
 // Pastikan user sudah login
 if (!isset($_SESSION['user_id'])) {
@@ -12,6 +13,30 @@ header('Content-Type: application/json');
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $user_role = $_SESSION['role'] ?? 'Admin';
+
+finance_ensure_default_accounts($conn);
+
+$spkItemPriceColRes = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
+$hasSpkItemPriceCol = $spkItemPriceColRes && mysqli_num_rows($spkItemPriceColRes) > 0;
+
+function get_sparepart_ratio(mysqli $conn, int $invoiceId): float {
+    $q = mysqli_query($conn, "SELECT biaya_sparepart, total FROM invoices WHERE id = $invoiceId LIMIT 1");
+    $row = mysqli_fetch_assoc($q);
+    if (!$row) {
+        return 0;
+    }
+    $total = (float)$row['total'];
+    $spare = (float)$row['biaya_sparepart'];
+    if ($total <= 0) {
+        return 0;
+    }
+    return max(0, min(1, $spare / $total));
+}
+
+function has_payment_finance_columns(mysqli $conn): bool {
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE 'finance_tx_id'");
+    return $res && mysqli_num_rows($res) > 0;
+}
 
 // CREATE INVOICE - Hanya Owner yang bisa buat invoice
 if ($action === 'create_invoice') {
@@ -48,11 +73,18 @@ if ($action === 'create_invoice') {
         exit;
     }
     
-    // Hitung total sparepart dari spk_items (menggunakan harga_jual_default)
-    $sql_items = "SELECT SUM(si.qty * sp.harga_jual_default) as biaya_sparepart
-                  FROM spk_items si
-                  JOIN spareparts sp ON si.sparepart_id = sp.id
-                  WHERE si.spk_id = $spk_id";
+    // Hitung total sparepart dari spk_items (gunakan snapshot harga_satuan jika tersedia)
+    if ($hasSpkItemPriceCol) {
+        $sql_items = "SELECT SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as biaya_sparepart
+                      FROM spk_items si
+                      JOIN spareparts sp ON si.sparepart_id = sp.id
+                      WHERE si.spk_id = $spk_id";
+    } else {
+        $sql_items = "SELECT SUM(si.qty * sp.harga_jual_default) as biaya_sparepart
+                      FROM spk_items si
+                      JOIN spareparts sp ON si.sparepart_id = sp.id
+                      WHERE si.spk_id = $spk_id";
+    }
     $result_items = mysqli_query($conn, $sql_items);
     $items_data = mysqli_fetch_assoc($result_items);
     $biaya_sparepart = (float)($items_data['biaya_sparepart'] ?? 0);
@@ -175,11 +207,23 @@ elseif ($action === 'read_one') {
         $row['services'] = $services;
         
         // Get sparepart items
-        $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
-                      (si.qty * sp.harga_jual_default) as subtotal
-                      FROM spk_items si
-                      JOIN spareparts sp ON si.sparepart_id = sp.id
-                      WHERE si.spk_id = {$row['spk_id']}";
+        $col_check = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
+        $has_price_cols = $col_check && mysqli_num_rows($col_check) > 0;
+        if ($has_price_cols) {
+            $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
+                          COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) as harga_satuan_eff,
+                          (si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as subtotal
+                          FROM spk_items si
+                          JOIN spareparts sp ON si.sparepart_id = sp.id
+                          WHERE si.spk_id = {$row['spk_id']}";
+        } else {
+            $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
+                          sp.harga_jual_default as harga_satuan_eff,
+                          (si.qty * sp.harga_jual_default) as subtotal
+                          FROM spk_items si
+                          JOIN spareparts sp ON si.sparepart_id = sp.id
+                          WHERE si.spk_id = {$row['spk_id']}";
+        }
         $result_items = mysqli_query($conn, $sql_items);
         
         $items = [];
@@ -224,6 +268,8 @@ elseif ($action === 'create_payment') {
     $tanggal = $_POST['payment_date'];
     $method = mysqli_real_escape_string($conn, $_POST['payment_method']);
     $note = mysqli_real_escape_string($conn, $_POST['notes'] ?? '');
+
+    $accountCode = ($method === 'cash') ? 'cash' : 'bank';
     
     if ($amount <= 0) {
         echo json_encode(['success' => false, 'message' => 'Jumlah pembayaran harus lebih dari 0']);
@@ -253,11 +299,48 @@ elseif ($action === 'create_payment') {
         exit;
     }
     
-    // Insert payment
-    $sql = "INSERT INTO payments (invoice_id, amount, tanggal, method, note, created_at)
-            VALUES ($invoice_id, $amount, '$tanggal', '$method', '$note', NOW())";
-    
-    if (mysqli_query($conn, $sql)) {
+    mysqli_begin_transaction($conn);
+    try {
+        $account = finance_get_account_by_code($conn, $accountCode);
+        if (!$account) {
+            throw new Exception('Akun keuangan tidak ditemukan');
+        }
+
+        $ratio = get_sparepart_ratio($conn, $invoice_id);
+        $financeAmount = round($amount * $ratio, 2);
+        $txId = null;
+        if ($financeAmount > 0) {
+            $tx = finance_add_transaction(
+                $conn,
+                $tanggal,
+                (int)$account['id'],
+                'in',
+                'invoice_sparepart_in',
+                $financeAmount,
+                'invoice',
+                $invoice_id,
+                $note !== '' ? $note : ('Pembayaran invoice #' . $invoice_id),
+                (int)$_SESSION['user_id']
+            );
+            if (!$tx['success']) {
+                throw new Exception($tx['message']);
+            }
+            $txId = (int)$tx['transaction_id'];
+        }
+
+        // Insert payment
+        if (has_payment_finance_columns($conn)) {
+            $sql = "INSERT INTO payments (invoice_id, amount, tanggal, method, finance_account_id, finance_tx_id, finance_amount, note, created_at)
+                    VALUES ($invoice_id, $amount, '$tanggal', '$method', {$account['id']}, " . ($txId ?: 'NULL') . ", $financeAmount, '$note', NOW())";
+        } else {
+            $sql = "INSERT INTO payments (invoice_id, amount, tanggal, method, note, created_at)
+                    VALUES ($invoice_id, $amount, '$tanggal', '$method', '$note', NOW())";
+        }
+
+        if (!mysqli_query($conn, $sql)) {
+            throw new Exception('Gagal mencatat pembayaran: ' . mysqli_error($conn));
+        }
+
         $payment_id = mysqli_insert_id($conn);
         
         // Update total pembayaran
@@ -276,13 +359,17 @@ elseif ($action === 'create_payment') {
         }
         
         $sql_update = "UPDATE invoices SET status_piutang = '$new_status', paid_at = $paid_at WHERE id = $invoice_id";
-        mysqli_query($conn, $sql_update);
+        if (!mysqli_query($conn, $sql_update)) {
+            throw new Exception('Gagal update status invoice');
+        }
         
         // Audit log
         $log_msg = "Pembayaran Rp " . number_format($amount, 0, ',', '.') . " untuk Invoice #$invoice_id via $method";
         $sql_log = "INSERT INTO audit_logs (user_id, action, target_table, target_id, description, created_at)
                     VALUES ({$_SESSION['user_id']}, 'CREATE', 'payments', $payment_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())";
         mysqli_query($conn, $sql_log);
+
+        mysqli_commit($conn);
         
         echo json_encode([
             'success' => true, 
@@ -291,8 +378,9 @@ elseif ($action === 'create_payment') {
             'new_total_paid' => $new_total_paid,
             'new_sisa' => $new_sisa
         ]);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Gagal mencatat pembayaran: ' . mysqli_error($conn)]);
+    } catch (Exception $e) {
+        mysqli_rollback($conn);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
 }
 
@@ -353,10 +441,65 @@ elseif ($action === 'edit_payment') {
         exit;
     }
     
-    // Update payment
-    $sql = "UPDATE payments SET amount = $new_amount, tanggal = '$tanggal', method = '$method', note = '$note', updated_at = NOW() WHERE id = $payment_id";
-    
-    if (mysqli_query($conn, $sql)) {
+    mysqli_begin_transaction($conn);
+    try {
+        $qPayMeta = mysqli_query($conn, "SELECT finance_tx_id FROM payments WHERE id = $payment_id LIMIT 1");
+        $payMeta = $qPayMeta ? mysqli_fetch_assoc($qPayMeta) : null;
+        if ($payMeta && !empty($payMeta['finance_tx_id'])) {
+            $reverse = finance_reverse_transaction($conn, (int)$payMeta['finance_tx_id']);
+            if (!$reverse['success']) {
+                throw new Exception($reverse['message']);
+            }
+        }
+
+        $accountCode = ($method === 'cash') ? 'cash' : 'bank';
+        $account = finance_get_account_by_code($conn, $accountCode);
+        if (!$account) {
+            throw new Exception('Akun keuangan tidak ditemukan');
+        }
+
+        $ratio = get_sparepart_ratio($conn, $invoice_id);
+        $financeAmount = round($new_amount * $ratio, 2);
+        $newTxId = null;
+        if ($financeAmount > 0) {
+            $tx = finance_add_transaction(
+                $conn,
+                $tanggal,
+                (int)$account['id'],
+                'in',
+                'invoice_sparepart_in',
+                $financeAmount,
+                'invoice',
+                $invoice_id,
+                $note !== '' ? $note : ('Edit pembayaran invoice #' . $invoice_id),
+                (int)$_SESSION['user_id']
+            );
+            if (!$tx['success']) {
+                throw new Exception($tx['message']);
+            }
+            $newTxId = (int)$tx['transaction_id'];
+        }
+
+        // Update payment
+        if (has_payment_finance_columns($conn)) {
+            $sql = "UPDATE payments
+                    SET amount = $new_amount,
+                        tanggal = '$tanggal',
+                        method = '$method',
+                        finance_account_id = {$account['id']},
+                        finance_tx_id = " . ($newTxId ?: 'NULL') . ",
+                        finance_amount = $financeAmount,
+                        note = '$note',
+                        updated_at = NOW()
+                    WHERE id = $payment_id";
+        } else {
+            $sql = "UPDATE payments SET amount = $new_amount, tanggal = '$tanggal', method = '$method', note = '$note', updated_at = NOW() WHERE id = $payment_id";
+        }
+
+        if (!mysqli_query($conn, $sql)) {
+            throw new Exception('Gagal mengupdate pembayaran: ' . mysqli_error($conn));
+        }
+
         // Update status piutang
         $new_status = 'Belum Bayar';
         $paid_at = 'NULL';
@@ -369,13 +512,17 @@ elseif ($action === 'edit_payment') {
         }
         
         $sql_update = "UPDATE invoices SET status_piutang = '$new_status', paid_at = $paid_at WHERE id = $invoice_id";
-        mysqli_query($conn, $sql_update);
+        if (!mysqli_query($conn, $sql_update)) {
+            throw new Exception('Gagal update status invoice');
+        }
         
         // Audit log
         $log_msg = "Pembayaran #$payment_id diupdate dari Rp " . number_format($old_amount, 0, ',', '.') . " menjadi Rp " . number_format($new_amount, 0, ',', '.') . " untuk Invoice #$invoice_id";
         $sql_log = "INSERT INTO audit_logs (user_id, action, target_table, target_id, description, created_at)
                     VALUES ({$_SESSION['user_id']}, 'UPDATE', 'payments', $payment_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())";
         mysqli_query($conn, $sql_log);
+
+        mysqli_commit($conn);
         
         echo json_encode([
             'success' => true, 
@@ -384,8 +531,9 @@ elseif ($action === 'edit_payment') {
             'new_total_paid' => $new_total_paid,
             'new_sisa' => $sisa
         ]);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Gagal mengupdate pembayaran: ' . mysqli_error($conn)]);
+    } catch (Exception $e) {
+        mysqli_rollback($conn);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
 }
 
@@ -411,10 +559,23 @@ elseif ($action === 'delete_payment') {
     $invoice_id = $payment['invoice_id'];
     $amount = (float)$payment['amount'];
     
-    // Delete payment
-    $sql = "DELETE FROM payments WHERE id = $payment_id";
-    
-    if (mysqli_query($conn, $sql)) {
+    mysqli_begin_transaction($conn);
+    try {
+        $qPayMeta = mysqli_query($conn, "SELECT finance_tx_id FROM payments WHERE id = $payment_id LIMIT 1");
+        $payMeta = $qPayMeta ? mysqli_fetch_assoc($qPayMeta) : null;
+        if ($payMeta && !empty($payMeta['finance_tx_id'])) {
+            $reverse = finance_reverse_transaction($conn, (int)$payMeta['finance_tx_id']);
+            if (!$reverse['success']) {
+                throw new Exception($reverse['message']);
+            }
+        }
+
+        // Delete payment
+        $sql = "DELETE FROM payments WHERE id = $payment_id";
+        if (!mysqli_query($conn, $sql)) {
+            throw new Exception('Gagal menghapus pembayaran: ' . mysqli_error($conn));
+        }
+
         // Hitung ulang total pembayaran
         $sql_paid = "SELECT COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE invoice_id = $invoice_id";
         $result_paid = mysqli_query($conn, $sql_paid);
@@ -437,17 +598,22 @@ elseif ($action === 'delete_payment') {
         }
         
         $sql_update = "UPDATE invoices SET status_piutang = '$new_status', paid_at = NULL WHERE id = $invoice_id";
-        mysqli_query($conn, $sql_update);
+        if (!mysqli_query($conn, $sql_update)) {
+            throw new Exception('Gagal update status invoice setelah hapus pembayaran');
+        }
         
         // Audit log
         $log_msg = "Pembayaran Rp " . number_format($amount, 0, ',', '.') . " dihapus dari Invoice #$invoice_id";
         $sql_log = "INSERT INTO audit_logs (user_id, action, target_table, target_id, description, created_at)
                     VALUES ({$_SESSION['user_id']}, 'DELETE', 'payments', $payment_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())";
         mysqli_query($conn, $sql_log);
+
+        mysqli_commit($conn);
         
         echo json_encode(['success' => true, 'message' => 'Pembayaran berhasil dihapus']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Gagal menghapus pembayaran: ' . mysqli_error($conn)]);
+    } catch (Exception $e) {
+        mysqli_rollback($conn);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
 }
 
@@ -471,10 +637,17 @@ elseif ($action === 'auto_create_invoices') {
         $spk_id = $row['id'];
         
         // Hitung total sparepart
-        $sql_items = "SELECT SUM(si.qty * sp.harga_jual_default) as biaya_sparepart
-                      FROM spk_items si
-                      JOIN spareparts sp ON si.sparepart_id = sp.id
-                      WHERE si.spk_id = $spk_id";
+        if ($hasSpkItemPriceCol) {
+            $sql_items = "SELECT SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as biaya_sparepart
+                          FROM spk_items si
+                          JOIN spareparts sp ON si.sparepart_id = sp.id
+                          WHERE si.spk_id = $spk_id";
+        } else {
+            $sql_items = "SELECT SUM(si.qty * sp.harga_jual_default) as biaya_sparepart
+                          FROM spk_items si
+                          JOIN spareparts sp ON si.sparepart_id = sp.id
+                          WHERE si.spk_id = $spk_id";
+        }
         $result_items = mysqli_query($conn, $sql_items);
         $items_data = mysqli_fetch_assoc($result_items);
         $biaya_sparepart = (float)($items_data['biaya_sparepart'] ?? 0);

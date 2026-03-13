@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../config.php';
+require_once '../finance_helper.php';
 
 // Pastikan user sudah login
 if (!isset($_SESSION['user_id'])) {
@@ -9,6 +10,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 header('Content-Type: application/json');
+
+finance_ensure_default_accounts($conn);
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
@@ -101,9 +104,10 @@ elseif ($action === 'read') {
     $search = $_GET['search'] ?? '';
     $status = $_GET['status'] ?? '';
     
-    $sql = "SELECT p.*, u.username as created_by_name 
+    $sql = "SELECT p.*, u.username as created_by_name, fa.name as payment_account_name, fa.code as payment_account_code
             FROM purchases p
             LEFT JOIN users u ON p.created_by = u.id";
+    $sql .= " LEFT JOIN finance_accounts fa ON p.payment_account_id = fa.id";
     
     $conditions = [];
     
@@ -176,6 +180,17 @@ elseif ($action === 'get_spareparts') {
     }
     
     echo json_encode(['success' => true, 'data' => $spareparts]);
+}
+
+// GET FINANCE ACCOUNTS - Untuk pilihan pembayaran PO
+elseif ($action === 'get_finance_accounts') {
+    $result = mysqli_query($conn, "SELECT id, code, name, current_balance FROM finance_accounts WHERE is_active = 1 ORDER BY id ASC");
+    $accounts = [];
+    while ($row = mysqli_fetch_assoc($result)) {
+        $accounts[] = $row;
+    }
+
+    echo json_encode(['success' => true, 'data' => $accounts]);
 }
 
 // UPDATE PURCHASE - Owner isi supplier dan harga
@@ -344,13 +359,93 @@ elseif ($action === 'update_status') {
 elseif ($action === 'update_payment') {
     $id = (int)$_POST['id'];
     $is_paid = $_POST['is_paid'];
-    
-    $sql = "UPDATE purchases SET is_paid = '" . mysqli_real_escape_string($conn, $is_paid) . "' WHERE id = $id";
-    
-    if (mysqli_query($conn, $sql)) {
+
+    $payment_account_code = $_POST['payment_account_code'] ?? '';
+    $payment_note = trim($_POST['payment_note'] ?? '');
+    $payment_date = $_POST['payment_date'] ?? date('Y-m-d');
+
+    $qPurchase = mysqli_query($conn, "SELECT id, total, is_paid FROM purchases WHERE id = $id LIMIT 1");
+    $purchase = mysqli_fetch_assoc($qPurchase);
+    if (!$purchase) {
+        echo json_encode(['success' => false, 'message' => 'Purchase tidak ditemukan']);
+        exit;
+    }
+
+    mysqli_begin_transaction($conn);
+    try {
+        // Mark as paid: create finance out transaction
+        if ($is_paid === 'Sudah Bayar') {
+            if ($purchase['is_paid'] === 'Sudah Bayar') {
+                throw new Exception('Purchase ini sudah ditandai Sudah Bayar');
+            }
+            if (empty($payment_account_code)) {
+                throw new Exception('Pilih sumber dana (Cash/Rekening)');
+            }
+
+            $account = finance_get_account_by_code($conn, $payment_account_code);
+            if (!$account) {
+                throw new Exception('Akun pembayaran tidak valid');
+            }
+
+            $tx = finance_add_transaction(
+                $conn,
+                $payment_date,
+                (int)$account['id'],
+                'out',
+                'purchase_payment_out',
+                (float)$purchase['total'],
+                'purchase',
+                $id,
+                $payment_note !== '' ? $payment_note : 'Pembayaran Purchase #' . $id,
+                (int)$_SESSION['user_id']
+            );
+
+            if (!$tx['success']) {
+                throw new Exception($tx['message']);
+            }
+
+            $sql = "UPDATE purchases
+                    SET is_paid = 'Sudah Bayar',
+                        payment_account_id = {$account['id']},
+                        paid_at = NOW(),
+                        payment_note = '" . mysqli_real_escape_string($conn, $payment_note) . "'
+                    WHERE id = $id";
+            if (!mysqli_query($conn, $sql)) {
+                throw new Exception('Gagal update status pembayaran purchase');
+            }
+        }
+
+        // Mark back to unpaid: reverse latest finance transaction for this purchase
+        else {
+            if ($purchase['is_paid'] !== 'Sudah Bayar') {
+                throw new Exception('Purchase ini belum berstatus Sudah Bayar');
+            }
+
+            $qTx = mysqli_query($conn, "SELECT id FROM finance_transactions WHERE reference_type = 'purchase' AND reference_id = $id AND category = 'purchase_payment_out' ORDER BY id DESC LIMIT 1");
+            $txRow = mysqli_fetch_assoc($qTx);
+            if ($txRow) {
+                $reverse = finance_reverse_transaction($conn, (int)$txRow['id']);
+                if (!$reverse['success']) {
+                    throw new Exception($reverse['message']);
+                }
+            }
+
+            $sql = "UPDATE purchases
+                    SET is_paid = 'Belum Bayar',
+                        payment_account_id = NULL,
+                        paid_at = NULL,
+                        payment_note = NULL
+                    WHERE id = $id";
+            if (!mysqli_query($conn, $sql)) {
+                throw new Exception('Gagal rollback status pembayaran purchase');
+            }
+        }
+
+        mysqli_commit($conn);
         echo json_encode(['success' => true, 'message' => 'Status pembayaran berhasil diupdate']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Gagal update status pembayaran']);
+    } catch (Exception $e) {
+        mysqli_rollback($conn);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
 }
 

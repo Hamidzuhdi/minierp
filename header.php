@@ -145,6 +145,11 @@
                 if ($user_role === 'Owner' || $user_role === 'Admin'):
                 ?>
                 <li class="nav-item">
+                    <a class="nav-link" href="../payments/index.php">
+                        <i class="fas fa-wallet"></i> Payment
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" href="../invoices/index.php">
                         <i class="fas fa-file-invoice"></i> Invoices
                     </a>

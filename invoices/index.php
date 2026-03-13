@@ -119,14 +119,11 @@ include '../header.php';
                         <label for="payment_method" class="form-label">Metode Pembayaran *</label>
                         <select class="form-select" id="payment_method" name="payment_method" required>
                             <option value="">-- Pilih Metode --</option>
-                            <option value="Cash">Cash / Tunai</option>
-                            <option value="Transfer">Transfer Bank</option>
-                            <option value="Kartu Kredit">Kartu Kredit</option>
-                            <option value="Kartu Debit">Kartu Debit</option>
-                            <option value="E-Wallet">E-Wallet (OVO, GoPay, Dana, dll)</option>
+                            <option value="cash">Cash / Tunai</option>
+                            <option value="transfer">Rekening / Transfer</option>
                         </select>
                         <small class="text-muted">
-                            <i class="fas fa-info-circle"></i> Pilihan selain Cash akan tersimpan sebagai Transfer di sistem
+                            <i class="fas fa-info-circle"></i> Pembayaran rekening akan tersimpan sebagai transfer di sistem
                         </small>
                     </div>
                     
@@ -174,7 +171,7 @@ include '../header.php';
                         <select class="form-select" id="edit_payment_method" name="payment_method" required>
                             <option value="">-- Pilih Metode --</option>
                             <option value="cash">Cash / Tunai</option>
-                            <option value="transfer">Transfer Bank</option>
+                            <option value="transfer">Rekening / Transfer</option>
                         </select>
                     </div>
                     
@@ -358,7 +355,7 @@ function displayInvoiceDetail(inv) {
                 <tr>
                     <td>${item.sparepart_name}</td>
                     <td class="text-center">${item.qty} ${item.satuan}</td>
-                    <td class="text-end">Rp ${formatNumber(item.harga_jual_default)}</td>
+                    <td class="text-end">Rp ${formatNumber(item.harga_satuan_eff || item.harga_jual_default)}</td>
                     <td class="text-end">Rp ${formatNumber(item.subtotal)}</td>
                 </tr>
             `;
@@ -375,12 +372,13 @@ function displayInvoiceDetail(inv) {
             if (pay.updated_at && pay.updated_at !== pay.created_at) {
                 updatedAtDisplay = formatDateTime(pay.updated_at);
             }
+            const methodLabel = pay.method === 'cash' ? 'Cash / Tunai' : 'Rekening / Transfer';
             
             paymentsHtml += `
                 <tr>
                     <td>${formatDateTime(pay.tanggal)}</td>
                     <td>Rp ${formatNumber(pay.amount)}</td>
-                    <td>${pay.method}</td>
+                    <td>${methodLabel}</td>
                     <td>${pay.note || '-'}</td>
                     <td>${updatedAtDisplay}</td>
                     <td>
@@ -528,37 +526,10 @@ $('#paymentForm').on('submit', function(e) {
     e.preventDefault();
     
     let formData = new FormData(this);
-    let selectedMethod = $('#payment_method').val();
+    let selectedMethod = $('#payment_method').val() || 'cash';
     let currentNote = $('#notes').val().trim();
-    
-    // Mapping metode pembayaran ke DB enum
-    let dbMethod = 'cash'; // default
-    let methodDetail = '';
-    
-    if (selectedMethod === 'Cash') {
-        dbMethod = 'cash';
-    } else if (selectedMethod === 'Transfer') {
-        dbMethod = 'transfer';
-        methodDetail = 'transfer - bank transfer';
-    } else if (selectedMethod === 'Kartu Kredit') {
-        dbMethod = 'transfer';
-        methodDetail = 'transfer - kartu kredit';
-    } else if (selectedMethod === 'Kartu Debit') {
-        dbMethod = 'transfer';
-        methodDetail = 'transfer - kartu debit';
-    } else if (selectedMethod === 'E-Wallet') {
-        dbMethod = 'transfer';
-        methodDetail = 'transfer - e-wallet';
-    }
-    
-    // Gabungkan method detail dengan note user (jika ada)
-    let finalNote = methodDetail;
-    if (currentNote) {
-        finalNote = methodDetail ? methodDetail + ' | ' + currentNote : currentNote;
-    }
-    
-    // Replace data
-    formData.set('payment_method', dbMethod);
+    let finalNote = currentNote;
+    formData.set('payment_method', selectedMethod);
     formData.set('notes', finalNote);
     
     $.ajax({

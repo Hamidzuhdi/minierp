@@ -631,6 +631,12 @@ if ($is_owner) {
                         </div>
                         <?php endif; ?>
                         <div class="col-md-3">
+                            <a href="payments/index.php" class="btn btn-outline-primary w-100 p-3">
+                                <i class="fas fa-wallet fa-2x d-block mb-2"></i>
+                                Payment
+                            </a>
+                        </div>
+                        <div class="col-md-3">
                             <a href="customers/index.php" class="btn btn-outline-success w-100 p-3">
                                 <i class="fas fa-user-tie fa-2x d-block mb-2"></i>
                                 Customers

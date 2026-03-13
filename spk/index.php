@@ -591,7 +591,7 @@ function viewDetail(id) {
                             <tr>
                                 <td>${item.sparepart_name}</td>
                                 <td>${item.qty} ${item.satuan}</td>
-                                <td>Rp ${formatNumber(item.harga_jual_default)}</td>
+                                <td>Rp ${formatNumber(item.harga_satuan_eff || item.harga_jual_default)}</td>
                                 <td>Rp ${formatNumber(subtotal)}</td>
                             </tr>
                         `;
@@ -978,7 +978,7 @@ function displaySparepartsList(spareparts) {
                 <tr>
                     <td>${sp.sparepart_name}</td>
                     <td>${sp.qty} ${sp.satuan}</td>
-                    <td>Rp ${formatNumber(sp.harga_jual_default)}</td>
+                    <td>Rp ${formatNumber(sp.harga_satuan_eff || sp.harga_jual_default)}</td>
                     <td>Rp ${formatNumber(subtotal)}</td>
                     <td>
                         <button type="button" class="btn btn-danger btn-sm" onclick="deleteSparepartFromSPK(${sp.id})">

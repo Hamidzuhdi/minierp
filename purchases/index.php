@@ -202,11 +202,49 @@ $is_owner = ($user_role === 'Owner');
 </div>
 <?php endif; ?>
 
+<!-- Modal Pembayaran Purchase -->
+<?php if ($is_owner): ?>
+<div class="modal fade" id="payPurchaseModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bayar Purchase</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="payPurchaseForm">
+                <div class="modal-body">
+                    <input type="hidden" id="pay_purchase_id">
+                    <div class="mb-3">
+                        <label class="form-label">Tanggal Bayar</label>
+                        <input type="date" class="form-control" id="pay_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Sumber Dana</label>
+                        <select class="form-select" id="pay_account_code" required>
+                            <option value="">-- Pilih Sumber Dana --</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Catatan</label>
+                        <textarea class="form-control" id="pay_note" rows="2" placeholder="Opsional"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Konfirmasi Bayar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php include '../footer.php'; ?>
 
 <script>
 let spareparts = [];
 let itemCounter = 0;
+let financeAccounts = [];
 const userRole = '<?php echo $_SESSION['role'] ?? 'Admin'; ?>';
 const isOwner = (userRole === 'Owner');
 
@@ -214,6 +252,9 @@ const isOwner = (userRole === 'Owner');
 $(document).ready(function() {
     loadPurchases();
     loadSpareparts();
+    if (isOwner) {
+        loadFinanceAccounts();
+    }
     
     // Set tanggal hari ini sebagai default
     $('#tanggal').val(new Date().toISOString().split('T')[0]);
@@ -231,7 +272,34 @@ $(document).ready(function() {
     $('#statusFilter').on('change', function() {
         loadPurchases();
     });
+
+    $('#payPurchaseForm').on('submit', function(e) {
+        e.preventDefault();
+        const id = $('#pay_purchase_id').val();
+        const accountCode = $('#pay_account_code').val();
+        const payDate = $('#pay_date').val();
+        const note = $('#pay_note').val();
+        updatePayment(id, 'Sudah Bayar', accountCode, payDate, note);
+    });
 });
+
+function loadFinanceAccounts() {
+    $.ajax({
+        url: 'backend.php?action=get_finance_accounts',
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                financeAccounts = response.data;
+                let options = '<option value="">-- Pilih Sumber Dana --</option>';
+                response.data.forEach(function(acc) {
+                    options += `<option value="${acc.code}">${acc.name} (Saldo: Rp ${formatNumber(acc.current_balance)})</option>`;
+                });
+                $('#pay_account_code').html(options);
+            }
+        }
+    });
+}
 
 // Load semua purchase
 function loadPurchases() {
@@ -316,7 +384,7 @@ function displayPurchases(purchases) {
                         </button>
                         ` : ''}
                         ${isOwner && p.status === 'Approved' && p.is_paid === 'Belum Bayar' ? `
-                        <button class="btn btn-primary btn-sm" onclick="updatePayment(${p.id}, 'Sudah Bayar')" title="Tandai Sudah Bayar">
+                        <button class="btn btn-primary btn-sm" onclick="openPayModal(${p.id})" title="Tandai Sudah Bayar">
                             <i class="fas fa-money-bill"></i> Bayar
                         </button>
                         ` : ''}
@@ -669,20 +737,35 @@ function updateStatus(id, status) {
     }
 }
 
+function openPayModal(purchaseId) {
+    $('#pay_purchase_id').val(purchaseId);
+    $('#pay_date').val(new Date().toISOString().split('T')[0]);
+    $('#pay_note').val('');
+    $('#pay_account_code').val('');
+    $('#payPurchaseModal').modal('show');
+}
+
 // Update payment status
-function updatePayment(id, isPaid) {
+function updatePayment(id, isPaid, accountCode = '', payDate = '', note = '') {
     $.ajax({
         url: 'backend.php',
         type: 'POST',
         data: {
             action: 'update_payment',
             id: id,
-            is_paid: isPaid
+            is_paid: isPaid,
+            payment_account_code: accountCode,
+            payment_date: payDate,
+            payment_note: note
         },
         dataType: 'json',
         success: function(response) {
             if (response.success) {
+                $('#payPurchaseModal').modal('hide');
                 showAlert('success', response.message);
+                if (isOwner) {
+                    loadFinanceAccounts();
+                }
                 loadPurchases();
             } else {
                 showAlert('danger', response.message);
