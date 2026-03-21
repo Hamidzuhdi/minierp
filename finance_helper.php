@@ -40,6 +40,7 @@ function finance_ensure_default_accounts(mysqli $conn): void
             id INT AUTO_INCREMENT PRIMARY KEY,
             tanggal DATE NOT NULL,
             expense_name VARCHAR(255) NOT NULL,
+            category_code VARCHAR(30) NULL,
             amount DECIMAL(14,2) NOT NULL,
             account_id INT NOT NULL,
             note TEXT NULL,
@@ -52,6 +53,23 @@ function finance_ensure_default_accounts(mysqli $conn): void
     ");
 
     mysqli_query($conn, "
+        CREATE TABLE IF NOT EXISTS expense_categories (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            code VARCHAR(30) NOT NULL UNIQUE,
+            name VARCHAR(120) NOT NULL,
+            description TEXT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB
+    ");
+
+    $colCheck = mysqli_query($conn, "SHOW COLUMNS FROM operational_expenses LIKE 'category_code'");
+    if ($colCheck && mysqli_num_rows($colCheck) === 0) {
+        mysqli_query($conn, "ALTER TABLE operational_expenses ADD COLUMN category_code VARCHAR(30) NULL AFTER expense_name");
+    }
+
+    mysqli_query($conn, "
         INSERT INTO finance_accounts (code, name, opening_balance, current_balance, is_active)
         SELECT 'cash', 'Kas Bengkel', 500000, 500000, 1
         WHERE NOT EXISTS (SELECT 1 FROM finance_accounts WHERE code = 'cash')
@@ -61,6 +79,24 @@ function finance_ensure_default_accounts(mysqli $conn): void
         INSERT INTO finance_accounts (code, name, opening_balance, current_balance, is_active)
         SELECT 'bank', 'Rekening Bengkel', 12000000, 12000000, 1
         WHERE NOT EXISTS (SELECT 1 FROM finance_accounts WHERE code = 'bank')
+    ");
+
+    mysqli_query($conn, "
+        INSERT INTO expense_categories (code, name, description, is_active)
+        SELECT 'EXP-LISTRIK', 'Biaya Listrik', 'Tagihan listrik operasional bengkel', 1
+        WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-LISTRIK')
+    ");
+
+    mysqli_query($conn, "
+        INSERT INTO expense_categories (code, name, description, is_active)
+        SELECT 'EXP-PDAM', 'Biaya PDAM', 'Tagihan air operasional bengkel', 1
+        WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-PDAM')
+    ");
+
+    mysqli_query($conn, "
+        INSERT INTO expense_categories (code, name, description, is_active)
+        SELECT 'EXP-ATK', 'ATK & Kertas Nota', 'Pembelian alat tulis kantor dan nota', 1
+        WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-ATK')
     ");
 }
 

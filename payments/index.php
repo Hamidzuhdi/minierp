@@ -43,6 +43,12 @@ include '../header.php';
                             <input type="text" class="form-control" id="op_name" placeholder="PDAM / Listrik / ATK" required>
                         </div>
                         <div class="mb-2">
+                            <label class="form-label">Kategori Pengeluaran</label>
+                            <select class="form-select" id="op_category" required>
+                                <option value="">-- Pilih Kategori --</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
                             <label class="form-label">Nominal</label>
                             <input type="number" class="form-control" id="op_amount" min="1" required>
                         </div>
@@ -61,38 +67,6 @@ include '../header.php';
                 </div>
             </div>
 
-            <div class="card border-0 shadow-sm mt-3">
-                <div class="card-header bg-white"><strong>Transfer Antar Akun</strong></div>
-                <div class="card-body">
-                    <form id="transferForm">
-                        <div class="mb-2">
-                            <label class="form-label">Tanggal</label>
-                            <input type="date" class="form-control" id="tf_tanggal" required>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Dari Akun</label>
-                            <select class="form-select" id="tf_from" required>
-                                <option value="">-- Pilih --</option>
-                            </select>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Ke Akun</label>
-                            <select class="form-select" id="tf_to" required>
-                                <option value="">-- Pilih --</option>
-                            </select>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Nominal</label>
-                            <input type="number" class="form-control" id="tf_amount" min="1" required>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Catatan</label>
-                            <textarea class="form-control" id="tf_note" rows="2"></textarea>
-                        </div>
-                        <button class="btn btn-outline-primary w-100" type="submit"><i class="fas fa-exchange-alt"></i> Simpan Transfer</button>
-                    </form>
-                </div>
-            </div>
         </div>
 
         <div class="col-md-8">
@@ -110,7 +84,7 @@ include '../header.php';
                         <div class="col-md-2"><input type="date" class="form-control form-control-sm" id="f_to"></div>
                         <div class="col-md-2"><select class="form-select form-select-sm" id="f_account"><option value="">Semua Akun</option></select></div>
                         <div class="col-md-2"><select class="form-select form-select-sm" id="f_direction"><option value="">Semua Arah</option><option value="in">Masuk</option><option value="out">Keluar</option><option value="transfer_in">Transfer Masuk</option><option value="transfer_out">Transfer Keluar</option></select></div>
-                        <div class="col-md-2"><select class="form-select form-select-sm" id="f_category"><option value="">Semua Kategori</option><option value="invoice_sparepart_in">Invoice Sparepart</option><option value="purchase_payment_out">Bayar Purchase</option><option value="operational_expense_out">Biaya Operasional</option><option value="transfer_in">Transfer Masuk</option><option value="transfer_out">Transfer Keluar</option></select></div>
+                        <div class="col-md-2"><select class="form-select form-select-sm" id="f_category"><option value="">Semua Kategori</option><option value="IN-CUST-SPAREPART">Pemasukan Customer</option><option value="OUT-PO">Pengeluaran PO</option><option value="TRF-IN">Transfer Masuk</option><option value="TRF-OUT">Transfer Keluar</option></select></div>
                         <div class="col-md-2"><input type="text" class="form-control form-control-sm" id="f_keyword" placeholder="Keyword"></div>
                         <div class="col-12 col-md-2 d-grid"><button class="btn btn-sm btn-outline-primary" onclick="loadTransactions()" type="button">Filter</button></div>
                     </div>
@@ -133,12 +107,74 @@ include '../header.php';
                     </div>
                 </div>
             </div>
+
+            <div class="row g-3 mt-1">
+                <div class="<?php echo ($user_role === 'Owner') ? 'col-md-6' : 'col-12'; ?>">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-white"><strong>Transfer Antar Akun</strong></div>
+                        <div class="card-body">
+                            <form id="transferForm">
+                                <div class="mb-2">
+                                    <label class="form-label">Tanggal</label>
+                                    <input type="date" class="form-control" id="tf_tanggal" required>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">Dari Akun</label>
+                                    <select class="form-select" id="tf_from" required>
+                                        <option value="">-- Pilih --</option>
+                                    </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">Ke Akun</label>
+                                    <select class="form-select" id="tf_to" required>
+                                        <option value="">-- Pilih --</option>
+                                    </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">Nominal</label>
+                                    <input type="number" class="form-control" id="tf_amount" min="1" required>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">Catatan</label>
+                                    <textarea class="form-control" id="tf_note" rows="2"></textarea>
+                                </div>
+                                <button class="btn btn-outline-primary w-100" type="submit"><i class="fas fa-exchange-alt"></i> Simpan Transfer</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <?php if ($user_role === 'Owner'): ?>
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-white"><strong>Master Kategori Pengeluaran</strong></div>
+                        <div class="card-body">
+                            <form id="catForm" class="row g-2 mb-2">
+                                <input type="hidden" id="cat_id">
+                                <div class="col-12"><input type="text" class="form-control form-control-sm" id="cat_code" placeholder="Kode (contoh EXP-LAIN)" required></div>
+                                <div class="col-12"><input type="text" class="form-control form-control-sm" id="cat_name" placeholder="Nama kategori" required></div>
+                                <div class="col-12"><input type="text" class="form-control form-control-sm" id="cat_desc" placeholder="Deskripsi (opsional)"></div>
+                                <div class="col-12 d-grid"><button class="btn btn-sm btn-primary" type="submit">Simpan Kategori</button></div>
+                            </form>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered mb-0">
+                                    <thead class="table-light"><tr><th>Kode</th><th>Nama</th><th>Aksi</th></tr></thead>
+                                    <tbody id="catTableBody"><tr><td colspan="3" class="text-center text-muted">Loading...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
 function fmt(n){ return 'Rp ' + parseFloat(n || 0).toLocaleString('id-ID'); }
+const isOwner = '<?php echo $user_role; ?>' === 'Owner';
+let expenseCategoryMap = {};
 
 $(document).ready(function(){
     const today = new Date().toISOString().split('T')[0];
@@ -146,6 +182,7 @@ $(document).ready(function(){
     $('#tf_tanggal').val(today);
     applyQuickRange('month', false);
     loadAccounts();
+    loadExpenseCategories();
     loadSummary();
     loadTransactions();
 
@@ -159,6 +196,7 @@ $(document).ready(function(){
                 action: 'create_operational_expense',
                 tanggal: $('#op_tanggal').val(),
                 expense_name: $('#op_name').val(),
+                category_code: $('#op_category').val(),
                 amount: $('#op_amount').val(),
                 account_code: $('#op_account').val(),
                 note: $('#op_note').val()
@@ -167,6 +205,7 @@ $(document).ready(function(){
                 if (res.success){
                     showAlert('success', res.message);
                     $('#op_name').val('');
+                    $('#op_category').val('');
                     $('#op_amount').val('');
                     $('#op_note').val('');
                     loadSummary();
@@ -201,6 +240,33 @@ $(document).ready(function(){
                     loadSummary();
                     loadAccounts();
                     loadTransactions();
+                } else {
+                    showAlert('danger', res.message);
+                }
+            }
+        });
+    });
+
+    $('#catForm').on('submit', function(e){
+        if (!isOwner) return;
+        e.preventDefault();
+        const id = $('#cat_id').val();
+        $.ajax({
+            url: 'backend.php',
+            type: 'POST',
+            dataType: 'json',
+            data: {
+                action: id ? 'update_expense_category' : 'create_expense_category',
+                id: id,
+                code: $('#cat_code').val(),
+                name: $('#cat_name').val(),
+                description: $('#cat_desc').val()
+            },
+            success: function(res){
+                if (res.success) {
+                    showAlert('success', res.message);
+                    resetCategoryForm();
+                    loadExpenseCategories();
                 } else {
                     showAlert('danger', res.message);
                 }
@@ -265,6 +331,91 @@ function loadAccounts(){
         $('#tf_from').html(tfFrom);
         $('#tf_to').html(tfTo);
         $('#f_account').html(filter);
+
+        // Auto-pick default account to avoid empty account on submit.
+        if (res.data.length > 0) {
+            const firstCode = res.data[0].code;
+            const secondCode = res.data.length > 1 ? res.data[1].code : firstCode;
+            if (!$('#op_account').val()) {
+                $('#op_account').val(firstCode);
+            }
+            if (!$('#tf_from').val()) {
+                $('#tf_from').val(firstCode);
+            }
+            if (!$('#tf_to').val()) {
+                $('#tf_to').val(secondCode);
+            }
+        }
+    });
+}
+
+function loadExpenseCategories(){
+    $.getJSON('backend.php?action=get_expense_categories', function(res){
+        if (!res.success) return;
+        let opCat = '<option value="">-- Pilih Kategori --</option>';
+        let catHtml = '';
+        expenseCategoryMap = {};
+        res.data.forEach(function(c){
+            expenseCategoryMap[c.id] = c;
+            opCat += `<option value="${c.code}">${c.code}</option>`;
+            catHtml += `<tr>
+                <td>${c.code}</td>
+                <td>${c.name}</td>
+                <td>
+                    ${isOwner ? `<button type="button" class="btn btn-warning btn-sm me-1" onclick="editCategory(${c.id})"><i class="fas fa-edit"></i></button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick='deleteCategory(${c.id})'><i class="fas fa-trash"></i></button>` : '-'}
+                </td>
+            </tr>`;
+        });
+        if (!catHtml) catHtml = '<tr><td colspan="3" class="text-center text-muted">Belum ada kategori</td></tr>';
+        $('#op_category').html(opCat);
+        $('#catTableBody').html(catHtml);
+
+        // Rebuild filter categories (dynamic + static)
+        let fCat = '<option value="">Semua Kategori</option>' +
+                   '<option value="IN-CUST-SPAREPART">IN-CUST-SPAREPART</option>' +
+                   '<option value="OUT-PO">OUT-PO</option>' +
+                   '<option value="TRF-IN">TRF-IN</option>' +
+                   '<option value="TRF-OUT">TRF-OUT</option>';
+        res.data.forEach(function(c){
+            fCat += `<option value="${c.code}">${c.code}</option>`;
+        });
+        $('#f_category').html(fCat);
+    });
+}
+
+function editCategory(categoryId){
+    const c = expenseCategoryMap[categoryId];
+    if (!c) return;
+    $('#cat_id').val(c.id);
+    $('#cat_code').val(c.code);
+    $('#cat_name').val(c.name);
+    $('#cat_desc').val(c.description || '');
+}
+
+function resetCategoryForm(){
+    $('#cat_id').val('');
+    $('#cat_code').val('');
+    $('#cat_name').val('');
+    $('#cat_desc').val('');
+}
+
+function deleteCategory(id){
+    if (!confirm('Hapus kategori ini?')) return;
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        dataType: 'json',
+        data: { action: 'delete_expense_category', id: id },
+        success: function(res){
+            if (res.success){
+                showAlert('success', res.message);
+                resetCategoryForm();
+                loadExpenseCategories();
+            } else {
+                showAlert('danger', res.message);
+            }
+        }
     });
 }
 
@@ -308,18 +459,11 @@ function loadTransactions(){
                         transfer_in: 'Transfer Masuk',
                         transfer_out: 'Transfer Keluar'
                     };
-                    const catLabelMap = {
-                        invoice_sparepart_in: 'Invoice Sparepart',
-                        purchase_payment_out: 'Bayar Purchase',
-                        operational_expense_out: 'Biaya Operasional',
-                        transfer_in: 'Transfer Masuk',
-                        transfer_out: 'Transfer Keluar'
-                    };
                     html += `<tr>
                         <td>${t.tanggal}</td>
                         <td>${t.account_name}</td>
                         <td>${dirLabelMap[t.direction] || t.direction}</td>
-                        <td>${catLabelMap[t.category] || t.category}</td>
+                        <td>${t.category || '-'}</td>
                         <td>${(t.reference_type || '-')}${t.reference_id ? (' #' + t.reference_id) : ''}</td>
                         <td>${t.note || '-'}</td>
                         <td class="text-end ${cls}">${sign}${fmt(t.amount)}</td>

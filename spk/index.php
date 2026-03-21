@@ -23,6 +23,13 @@ $is_owner = ($user_role === 'Owner');
 </style>
 <?php endif; ?>
 
+<style>
+    #analisaModal .modal-body {
+        max-height: calc(100vh - 180px);
+        overflow-y: auto;
+    }
+</style>
+
 <div class="container-fluid py-4">
     <div class="row">
         <div class="col-12">
@@ -146,7 +153,7 @@ $is_owner = ($user_role === 'Owner');
 
 <!-- Modal Analisa Mekanik -->
 <div class="modal fade" id="analisaModal" tabindex="-1">
-    <div class="modal-dialog modal-xl">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Analisa & Estimasi Mekanik</h5>
@@ -302,9 +309,23 @@ $(document).ready(function() {
             $('#vehicle_id').html('<option value="">-- Pilih Customer Dulu --</option>').prop('disabled', true);
         }
     });
+
+    // Prevent select2 dropdown from leaving modal in a "stuck" state.
+    $('#analisaModal').on('hidden.bs.modal', function() {
+        if ($.fn.select2) {
+            if ($('#service_select').hasClass('select2-hidden-accessible')) {
+                $('#service_select').select2('close');
+            }
+            if ($('#sparepart_select').hasClass('select2-hidden-accessible')) {
+                $('#sparepart_select').select2('close');
+            }
+        }
+    });
 });
 
 function loadAllVehiclesForFilter() {
+    const prevValue = $('#vehicleFilter').val() || '';
+
     $.ajax({
         url: 'backend.php?action=get_all_vehicles',
         type: 'GET',
@@ -315,15 +336,26 @@ function loadAllVehiclesForFilter() {
                 response.data.forEach(function(v) {
                     options += `<option value="${v.id}">${v.customer_name} - ${v.nomor_polisi} - ${v.model || v.merk || 'N/A'}</option>`;
                 });
+
+                // Prevent duplicate Select2 wrappers on reload.
+                if ($.fn.select2 && $('#vehicleFilter').hasClass('select2-hidden-accessible')) {
+                    $('#vehicleFilter').select2('destroy');
+                }
+
                 $('#vehicleFilter').html(options);
+                if (prevValue) {
+                    $('#vehicleFilter').val(prevValue);
+                }
                 
-                // Initialize Select2 for searchable dropdown
-                $('#vehicleFilter').select2({
-                    theme: 'bootstrap-5',
-                    placeholder: 'Filter by kendaraan...',
-                    allowClear: true,
-                    width: '100%'
-                });
+                // Initialize searchable dropdown when Select2 is available.
+                if ($.fn.select2) {
+                    $('#vehicleFilter').select2({
+                        theme: 'bootstrap-5',
+                        placeholder: 'Filter by kendaraan...',
+                        allowClear: true,
+                        width: '100%'
+                    });
+                }
             }
         }
     });
@@ -804,17 +836,28 @@ function loadServicePrices() {
                 response.data.forEach(function(service) {
                     options += `<option value="${service.id}" data-price="${service.harga}">${service.kode_jasa} - ${service.nama_jasa} - Rp ${formatNumber(service.harga)}</option>`;
                 });
+
+                if ($.fn.select2 && $('#service_select').hasClass('select2-hidden-accessible')) {
+                    $('#service_select').select2('destroy');
+                }
                 $('#service_select').html(options);
                 
                 // Initialize Select2 for searchable dropdown
-                $('#service_select').select2({
-                    theme: 'bootstrap-5',
-                    placeholder: 'Cari by kode jasa atau nama jasa...',
-                    allowClear: true,
-                    width: '100%',
-                    dropdownParent: $('#analisaModal')
-                });
+                if ($.fn.select2) {
+                    $('#service_select').select2({
+                        theme: 'bootstrap-5',
+                        placeholder: 'Cari by kode jasa atau nama jasa...',
+                        allowClear: true,
+                        width: '100%',
+                        dropdownParent: $('#analisaModal')
+                    });
+                }
+            } else {
+                showAlert('danger', response.message || 'Gagal memuat daftar jasa');
             }
+        },
+        error: function(xhr) {
+            showAlert('danger', 'Error load jasa: ' + (xhr.responseText || 'Unknown error'));
         }
     });
 }
@@ -938,17 +981,28 @@ function loadSpareparts() {
                 response.data.forEach(function(sp) {
                     options += `<option value="${sp.id}" data-price="${sp.harga_jual_default}" data-stok="${sp.stok}">${sp.kode_sparepart} - ${sp.nama} (Stok: ${sp.stok}) - Rp ${formatNumber(sp.harga_jual_default)}</option>`;
                 });
+
+                if ($.fn.select2 && $('#sparepart_select').hasClass('select2-hidden-accessible')) {
+                    $('#sparepart_select').select2('destroy');
+                }
                 $('#sparepart_select').html(options);
                 
                 // Initialize Select2 for searchable dropdown
-                $('#sparepart_select').select2({
-                    theme: 'bootstrap-5',
-                    placeholder: 'Cari by kode atau nama sparepart...',
-                    allowClear: true,
-                    width: '100%',
-                    dropdownParent: $('#analisaModal')
-                });
+                if ($.fn.select2) {
+                    $('#sparepart_select').select2({
+                        theme: 'bootstrap-5',
+                        placeholder: 'Cari by kode atau nama sparepart...',
+                        allowClear: true,
+                        width: '100%',
+                        dropdownParent: $('#analisaModal')
+                    });
+                }
+            } else {
+                showAlert('danger', response.message || 'Gagal memuat daftar sparepart');
             }
+        },
+        error: function(xhr) {
+            showAlert('danger', 'Error load sparepart: ' + (xhr.responseText || 'Unknown error'));
         }
     });
 }
@@ -1000,9 +1054,19 @@ function addSparepartToSPK() {
     const spkId = $('#analisa_spk_id').val();
     const sparepartId = $('#sparepart_select').val();
     const qty = parseInt($('#sparepart_qty').val()) || 1;
+
+    if (!spkId) {
+        showAlert('danger', 'SPK tidak valid. Tutup modal lalu buka lagi Analisa.');
+        return;
+    }
     
     if (!sparepartId) {
         showAlert('warning', 'Pilih sparepart terlebih dahulu');
+        return;
+    }
+
+    if (qty <= 0) {
+        showAlert('warning', 'Qty harus lebih dari 0');
         return;
     }
     
@@ -1034,6 +1098,9 @@ function addSparepartToSPK() {
             } else {
                 showAlert('danger', response.message);
             }
+        },
+        error: function(xhr) {
+            showAlert('danger', 'Gagal menambahkan sparepart: ' + (xhr.responseText || 'Unknown error'));
         }
     });
 }

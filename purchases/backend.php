@@ -392,11 +392,11 @@ elseif ($action === 'update_payment') {
                 $payment_date,
                 (int)$account['id'],
                 'out',
-                'purchase_payment_out',
+                'OUT-PO',
                 (float)$purchase['total'],
                 'purchase',
                 $id,
-                $payment_note !== '' ? $payment_note : 'Pembayaran Purchase #' . $id,
+                $payment_note !== '' ? $payment_note : 'Pengeluaran PO #' . $id,
                 (int)$_SESSION['user_id']
             );
 
@@ -421,7 +421,7 @@ elseif ($action === 'update_payment') {
                 throw new Exception('Purchase ini belum berstatus Sudah Bayar');
             }
 
-            $qTx = mysqli_query($conn, "SELECT id FROM finance_transactions WHERE reference_type = 'purchase' AND reference_id = $id AND category = 'purchase_payment_out' ORDER BY id DESC LIMIT 1");
+            $qTx = mysqli_query($conn, "SELECT id FROM finance_transactions WHERE reference_type = 'purchase' AND reference_id = $id AND category = 'OUT-PO' ORDER BY id DESC LIMIT 1");
             $txRow = mysqli_fetch_assoc($qTx);
             if ($txRow) {
                 $reverse = finance_reverse_transaction($conn, (int)$txRow['id']);

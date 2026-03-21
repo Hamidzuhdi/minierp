@@ -12,6 +12,10 @@ header('Content-Type: application/json');
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
+// Support both legacy `stok` and new `current_stock` column names.
+$stock_col_check = mysqli_query($conn, "SHOW COLUMNS FROM spareparts LIKE 'current_stock'");
+$sparepart_stock_col = (mysqli_num_rows($stock_col_check) > 0) ? 'current_stock' : 'stok';
+
 // CREATE - Buat SPK Baru
 if ($action === 'create') {
     $customer_id = (int)$_POST['customer_id'];
@@ -272,23 +276,6 @@ elseif ($action === 'update_status') {
     }
 }
 
-// ADD SPAREPART TO SPK (dari warehouse approved)
-elseif ($action === 'add_sparepart') {
-    $spk_id = (int)$_POST['spk_id'];
-    $sparepart_id = (int)$_POST['sparepart_id'];
-    $qty = (int)$_POST['qty'];
-    $harga_satuan = (float)$_POST['harga_satuan'];
-    
-    $sql = "INSERT INTO spk_items (spk_id, sparepart_id, qty, harga_satuan) 
-            VALUES ($spk_id, $sparepart_id, $qty, $harga_satuan)";
-    
-    if (mysqli_query($conn, $sql)) {
-        echo json_encode(['success' => true, 'message' => 'Sparepart berhasil ditambahkan ke SPK']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Gagal menambahkan sparepart: ' . mysqli_error($conn)]);
-    }
-}
-
 // ADD SERVICE TO SPK
 elseif ($action === 'add_service') {
     $spk_id = (int)$_POST['spk_id'];
@@ -321,11 +308,16 @@ elseif ($action === 'delete_service') {
 
 // GET ALL SPAREPARTS FOR DROPDOWN
 elseif ($action === 'get_all_spareparts') {
-    $sql = "SELECT id, kode_sparepart, nama, satuan, stok, harga_jual_default 
+    $sql = "SELECT id, kode_sparepart, nama, satuan, {$sparepart_stock_col} as stok, harga_jual_default 
             FROM spareparts 
-            WHERE stok > 0
+            WHERE {$sparepart_stock_col} > 0
             ORDER BY nama ASC";
     $result = mysqli_query($conn, $sql);
+
+    if (!$result) {
+        echo json_encode(['success' => false, 'message' => 'Gagal memuat sparepart: ' . mysqli_error($conn)]);
+        exit;
+    }
     
     $spareparts = [];
     while ($row = mysqli_fetch_assoc($result)) {
@@ -340,10 +332,26 @@ elseif ($action === 'add_sparepart') {
     $spk_id = (int)$_POST['spk_id'];
     $sparepart_id = (int)$_POST['sparepart_id'];
     $qty = (int)$_POST['qty'];
+
+    if ($spk_id <= 0 || $sparepart_id <= 0 || $qty <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Parameter tambah sparepart tidak valid']);
+        exit;
+    }
+
+    $spk_exists = mysqli_query($conn, "SELECT id FROM spk WHERE id = $spk_id LIMIT 1");
+    if (!$spk_exists || mysqli_num_rows($spk_exists) === 0) {
+        echo json_encode(['success' => false, 'message' => 'SPK tidak ditemukan']);
+        exit;
+    }
     
     // Check stock availability + get price snapshot
-    $check_stock = mysqli_query($conn, "SELECT stok, harga_jual_default, harga_beli_default FROM spareparts WHERE id = $sparepart_id");
+    $check_stock = mysqli_query($conn, "SELECT {$sparepart_stock_col} as stok, harga_jual_default, harga_beli_default FROM spareparts WHERE id = $sparepart_id");
     $stock = mysqli_fetch_assoc($check_stock);
+
+    if (!$stock) {
+        echo json_encode(['success' => false, 'message' => 'Sparepart tidak ditemukan']);
+        exit;
+    }
     
     if ($stock['stok'] < $qty) {
         echo json_encode(['success' => false, 'message' => 'Stok tidak mencukupi. Stok tersedia: ' . $stock['stok']]);
@@ -353,13 +361,19 @@ elseif ($action === 'add_sparepart') {
     $harga_satuan = (float)$stock['harga_jual_default'];
     $hpp_satuan = (float)$stock['harga_beli_default'];
     
-    // Check if harga_satuan column exists (after migration)
-    $col_check = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
-    $has_cols = mysqli_num_rows($col_check) > 0;
+    // Check migration columns in spk_items and adapt insert query.
+    $col_harga = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
+    $has_harga_col = $col_harga && mysqli_num_rows($col_harga) > 0;
+
+    $col_hpp = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'hpp_satuan'");
+    $has_hpp_col = $col_hpp && mysqli_num_rows($col_hpp) > 0;
     
-    if ($has_cols) {
+    if ($has_harga_col && $has_hpp_col) {
         $sql = "INSERT INTO spk_items (spk_id, sparepart_id, qty, harga_satuan, hpp_satuan) 
                 VALUES ($spk_id, $sparepart_id, $qty, $harga_satuan, $hpp_satuan)";
+    } elseif ($has_harga_col) {
+        $sql = "INSERT INTO spk_items (spk_id, sparepart_id, qty, harga_satuan) 
+                VALUES ($spk_id, $sparepart_id, $qty, $harga_satuan)";
     } else {
         $sql = "INSERT INTO spk_items (spk_id, sparepart_id, qty) 
                 VALUES ($spk_id, $sparepart_id, $qty)";
@@ -367,7 +381,7 @@ elseif ($action === 'add_sparepart') {
     
     if (mysqli_query($conn, $sql)) {
         // Decrease stock
-        mysqli_query($conn, "UPDATE spareparts SET stok = stok - $qty WHERE id = $sparepart_id");
+        mysqli_query($conn, "UPDATE spareparts SET {$sparepart_stock_col} = {$sparepart_stock_col} - $qty WHERE id = $sparepart_id");
         echo json_encode(['success' => true, 'message' => 'Sparepart berhasil ditambahkan ke SPK']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal menambahkan sparepart: ' . mysqli_error($conn)]);
@@ -384,7 +398,7 @@ elseif ($action === 'delete_sparepart') {
     
     if ($item) {
         // Restore stock
-        mysqli_query($conn, "UPDATE spareparts SET stok = stok + {$item['qty']} WHERE id = {$item['sparepart_id']}");
+        mysqli_query($conn, "UPDATE spareparts SET {$sparepart_stock_col} = {$sparepart_stock_col} + {$item['qty']} WHERE id = {$item['sparepart_id']}");
         
         // Delete from spk_items
         $sql = "DELETE FROM spk_items WHERE id = $id";

@@ -28,6 +28,97 @@ if ($action === 'get_accounts') {
     echo json_encode(['success' => true, 'data' => $rows]);
 }
 
+elseif ($action === 'get_expense_categories') {
+    $res = mysqli_query($conn, "SELECT id, code, name, description, is_active FROM expense_categories WHERE is_active = 1 ORDER BY name ASC");
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $rows[] = $r;
+    }
+    echo json_encode(['success' => true, 'data' => $rows]);
+}
+
+elseif ($action === 'get_operational_expense_categories') {
+    $res = mysqli_query($conn, "
+        SELECT DISTINCT oe.category_code as code,
+               COALESCE(ec.name, oe.category_code) as name
+        FROM operational_expenses oe
+        LEFT JOIN expense_categories ec ON ec.code = oe.category_code
+        WHERE oe.category_code IS NOT NULL AND oe.category_code <> ''
+        ORDER BY oe.category_code ASC
+    ");
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $rows[] = $r;
+    }
+    echo json_encode(['success' => true, 'data' => $rows]);
+}
+
+elseif ($action === 'create_expense_category') {
+    if ($userRole !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa menambah kategori']);
+        exit;
+    }
+    $code = strtoupper(trim($_POST['code'] ?? ''));
+    $name = trim($_POST['name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    if ($code === '' || $name === '') {
+        echo json_encode(['success' => false, 'message' => 'Kode dan nama kategori wajib diisi']);
+        exit;
+    }
+    $sql = "INSERT INTO expense_categories (code, name, description, is_active)
+            VALUES ('" . mysqli_real_escape_string($conn, $code) . "',
+                    '" . mysqli_real_escape_string($conn, $name) . "',
+                    '" . mysqli_real_escape_string($conn, $description) . "', 1)";
+    if (mysqli_query($conn, $sql)) {
+        echo json_encode(['success' => true, 'message' => 'Kategori pengeluaran berhasil ditambahkan']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal menambah kategori: ' . mysqli_error($conn)]);
+    }
+}
+
+elseif ($action === 'update_expense_category') {
+    if ($userRole !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa mengubah kategori']);
+        exit;
+    }
+    $id = (int)($_POST['id'] ?? 0);
+    $code = strtoupper(trim($_POST['code'] ?? ''));
+    $name = trim($_POST['name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    if ($id <= 0 || $code === '' || $name === '') {
+        echo json_encode(['success' => false, 'message' => 'Data kategori tidak valid']);
+        exit;
+    }
+    $sql = "UPDATE expense_categories
+            SET code = '" . mysqli_real_escape_string($conn, $code) . "',
+                name = '" . mysqli_real_escape_string($conn, $name) . "',
+                description = '" . mysqli_real_escape_string($conn, $description) . "'
+            WHERE id = $id";
+    if (mysqli_query($conn, $sql)) {
+        echo json_encode(['success' => true, 'message' => 'Kategori pengeluaran berhasil diupdate']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal update kategori: ' . mysqli_error($conn)]);
+    }
+}
+
+elseif ($action === 'delete_expense_category') {
+    if ($userRole !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa menghapus kategori']);
+        exit;
+    }
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID kategori tidak valid']);
+        exit;
+    }
+    $sql = "UPDATE expense_categories SET is_active = 0 WHERE id = $id";
+    if (mysqli_query($conn, $sql)) {
+        echo json_encode(['success' => true, 'message' => 'Kategori pengeluaran berhasil dihapus']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal menghapus kategori']);
+    }
+}
+
 elseif ($action === 'summary') {
     $cash = finance_get_account_by_code($conn, 'cash');
     $bank = finance_get_account_by_code($conn, 'bank');
@@ -62,10 +153,12 @@ elseif ($action === 'read_transactions') {
     $category = $_GET['category'] ?? '';
     $keyword = trim($_GET['keyword'] ?? '');
 
-    $sql = "SELECT ft.*, fa.code as account_code, fa.name as account_name, u.username as created_by_name
+        $sql = "SELECT ft.*, fa.code as account_code, fa.name as account_name, u.username as created_by_name,
+               ec.name as expense_category_name
             FROM finance_transactions ft
             JOIN finance_accounts fa ON ft.account_id = fa.id
-            LEFT JOIN users u ON ft.created_by = u.id";
+            LEFT JOIN users u ON ft.created_by = u.id
+            LEFT JOIN expense_categories ec ON ft.category = ec.code";
 
     $conds = [];
     if ($from !== '') {
@@ -109,12 +202,20 @@ elseif ($action === 'read_transactions') {
 elseif ($action === 'create_operational_expense') {
     $tanggal = $_POST['tanggal'] ?? date('Y-m-d');
     $expenseName = trim($_POST['expense_name'] ?? '');
+    $categoryCode = trim($_POST['category_code'] ?? '');
     $amount = (float)($_POST['amount'] ?? 0);
     $accountCode = $_POST['account_code'] ?? '';
     $note = trim($_POST['note'] ?? '');
 
-    if ($expenseName === '' || $amount <= 0 || $accountCode === '') {
+    if ($expenseName === '' || $categoryCode === '' || $amount <= 0 || $accountCode === '') {
         echo json_encode(['success' => false, 'message' => 'Data pengeluaran operasional tidak lengkap']);
+        exit;
+    }
+
+    $qCat = mysqli_query($conn, "SELECT code, name FROM expense_categories WHERE code = '" . mysqli_real_escape_string($conn, $categoryCode) . "' AND is_active = 1 LIMIT 1");
+    $cat = mysqli_fetch_assoc($qCat);
+    if (!$cat) {
+        echo json_encode(['success' => false, 'message' => 'Kategori pengeluaran tidak valid']);
         exit;
     }
 
@@ -131,11 +232,11 @@ elseif ($action === 'create_operational_expense') {
             $tanggal,
             (int)$account['id'],
             'out',
-            'operational_expense_out',
+            $cat['code'],
             $amount,
             'operational',
             null,
-            $note !== '' ? $note : ('Biaya operasional: ' . $expenseName),
+            $note !== '' ? $note : ('Pengeluaran ' . $cat['name'] . ': ' . $expenseName),
             (int)$_SESSION['user_id']
         );
 
@@ -143,9 +244,10 @@ elseif ($action === 'create_operational_expense') {
             throw new Exception($tx['message']);
         }
 
-        $sql = "INSERT INTO operational_expenses (tanggal, expense_name, amount, account_id, note, created_by)
+        $sql = "INSERT INTO operational_expenses (tanggal, expense_name, category_code, amount, account_id, note, created_by)
                 VALUES ('" . mysqli_real_escape_string($conn, $tanggal) . "',
                         '" . mysqli_real_escape_string($conn, $expenseName) . "',
+                '" . mysqli_real_escape_string($conn, $cat['code']) . "',
                         $amount,
                         {$account['id']},
                         '" . mysqli_real_escape_string($conn, $note) . "',
@@ -196,7 +298,7 @@ elseif ($action === 'create_transfer') {
             $tanggal,
             (int)$fromAcc['id'],
             'transfer_out',
-            'transfer_out',
+            'TRF-OUT',
             $amount,
             'transfer',
             null,
@@ -212,7 +314,7 @@ elseif ($action === 'create_transfer') {
             $tanggal,
             (int)$toAcc['id'],
             'transfer_in',
-            'transfer_in',
+            'TRF-IN',
             $amount,
             'transfer',
             null,

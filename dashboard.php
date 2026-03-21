@@ -362,7 +362,7 @@ if ($is_owner) {
     <div class="row mb-3 mt-5">
         <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0"><i class="fas fa-chart-bar text-success"></i> Dashboard Keuangan</h5>
-            <div class="d-flex align-items-center gap-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
                 <label class="mb-0 fw-semibold">Filter Bulan:</label>
                 <select id="financeMonthFilter" class="form-select form-select-sm" style="width:180px;">
                     <option value="">Semua Waktu</option>
@@ -373,6 +373,9 @@ if ($is_owner) {
                     }
                     ?>
                 </select>
+                <a id="financePdfBtn" href="dashboard_finance_pdf.php" target="_blank" class="btn btn-sm btn-outline-danger">
+                    <i class="fas fa-file-pdf"></i> Download PDF
+                </a>
             </div>
         </div>
     </div>
@@ -382,48 +385,48 @@ if ($is_owner) {
         <div class="col-md-2 col-sm-4">
             <div class="card border-0 shadow-sm bg-primary text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Revenue Jasa</div>
-                    <div class="fw-bold" id="fcRevenueJasa">-</div>
+                    <div class="small mb-1">Cashflow Masuk</div>
+                    <div class="fw-bold" id="fcTotalIn">-</div>
                 </div>
             </div>
         </div>
         <div class="col-md-2 col-sm-4">
             <div class="card border-0 shadow-sm bg-info text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Revenue Sparepart</div>
-                    <div class="fw-bold" id="fcRevenueSpare">-</div>
+                    <div class="small mb-1">Cashflow Keluar</div>
+                    <div class="fw-bold" id="fcTotalOut">-</div>
                 </div>
             </div>
         </div>
         <div class="col-md-2 col-sm-4">
             <div class="card border-0 shadow-sm bg-warning text-dark h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">HPP Sparepart</div>
-                    <div class="fw-bold" id="fcHpp">-</div>
+                    <div class="small mb-1">Pengeluaran PO</div>
+                    <div class="fw-bold" id="fcPoOut">-</div>
                 </div>
             </div>
         </div>
         <div class="col-md-2 col-sm-4">
             <div class="card border-0 shadow-sm bg-success text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Profit Sparepart</div>
-                    <div class="fw-bold" id="fcProfit">-</div>
+                    <div class="small mb-1">Pemasukan SPK</div>
+                    <div class="fw-bold" id="fcSpkIn">-</div>
                 </div>
             </div>
         </div>
         <div class="col-md-2 col-sm-4">
             <div class="card border-0 shadow-sm bg-secondary text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Total Revenue</div>
-                    <div class="fw-bold" id="fcTotalRevenue">-</div>
+                    <div class="small mb-1">Biaya Operasional</div>
+                    <div class="fw-bold" id="fcOpsOut">-</div>
                 </div>
             </div>
         </div>
         <div class="col-md-2 col-sm-4">
             <div class="card border-0 shadow-sm bg-dark text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Cashflow Masuk</div>
-                    <div class="fw-bold" id="fcCashflow">-</div>
+                    <div class="small mb-1">Net Cashflow</div>
+                    <div class="fw-bold" id="fcNet">-</div>
                 </div>
             </div>
         </div>
@@ -434,7 +437,7 @@ if ($is_owner) {
         <div class="col-md-7">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-header bg-white fw-semibold">
-                    <i class="fas fa-chart-line text-primary"></i> Revenue & Profit per Bulan (12 Bulan Terakhir)
+                    <i class="fas fa-chart-line text-primary"></i> Cashflow per Bulan (12 Bulan Terakhir)
                 </div>
                 <div class="card-body">
                     <canvas id="financeChart" height="120"></canvas>
@@ -444,13 +447,13 @@ if ($is_owner) {
         <div class="col-md-5">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-header bg-white fw-semibold">
-                    <i class="fas fa-trophy text-warning"></i> Top Sparepart by Profit
+                    <i class="fas fa-tags text-warning"></i> Top Kategori Pengeluaran
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-sm table-hover mb-0">
                             <thead class="table-light">
-                                <tr><th>Nama</th><th class="text-end">Profit</th></tr>
+                                <tr><th>Kategori</th><th class="text-end">Total</th></tr>
                             </thead>
                             <tbody id="topSparepartTable">
                                 <tr><td colspan="2" class="text-center text-muted py-3">Loading...</td></tr>
@@ -467,19 +470,19 @@ if ($is_owner) {
         <div class="col-12">
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-white fw-semibold">
-                    <i class="fas fa-history text-secondary"></i> Transaksi Invoice Terbaru
+                    <i class="fas fa-history text-secondary"></i> Transaksi Keuangan Terbaru
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-sm table-hover mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th>Kode SPK</th>
                                     <th>Tanggal</th>
-                                    <th>Customer</th>
-                                    <th>Kendaraan</th>
-                                    <th class="text-end">Total</th>
-                                    <th>Status</th>
+                                    <th>Akun</th>
+                                    <th>Kategori</th>
+                                    <th>Ref</th>
+                                    <th>Arah</th>
+                                    <th class="text-end">Nominal</th>
                                 </tr>
                             </thead>
                             <tbody id="recentTransTable">
@@ -500,6 +503,27 @@ if ($is_owner) {
     function fcFormat(num) {
         return 'Rp ' + parseFloat(num).toLocaleString('id-ID', {minimumFractionDigits: 0});
     }
+
+    function financeCategoryLabel(code, expenseName) {
+        const labels = {
+            'OUT-PO': 'Pengeluaran PO',
+            'IN-CUST-SPAREPART': 'Pemasukan SPK Sparepart',
+            'IN-CUST-PAYMENT': 'Pembayaran Invoice Customer',
+            'TRF-IN': 'Transfer Masuk',
+            'TRF-OUT': 'Transfer Keluar'
+        };
+        if (expenseName) return expenseName;
+        return labels[code] || code || '-';
+    }
+
+    function updateFinancePdfUrl() {
+        let month = $('#financeMonthFilter').val() || '';
+        let url = 'dashboard_finance_pdf.php';
+        if (month) {
+            url += '?month=' + encodeURIComponent(month);
+        }
+        $('#financePdfBtn').attr('href', url);
+    }
     
     function loadFinanceDashboard() {
         let month = $('#financeMonthFilter').val();
@@ -511,18 +535,18 @@ if ($is_owner) {
                 if (!res.success) return;
                 
                 // Update cards
-                $('#fcRevenueJasa').text(fcFormat(res.summary.revenue_jasa));
-                $('#fcRevenueSpare').text(fcFormat(res.summary.revenue_spare));
-                $('#fcHpp').text(fcFormat(res.summary.hpp_spare));
-                $('#fcProfit').text(fcFormat(res.summary.profit_spare));
-                $('#fcTotalRevenue').text(fcFormat(res.summary.total_revenue));
-                $('#fcCashflow').text(fcFormat(res.summary.cashflow_masuk));
+                $('#fcTotalIn').text(fcFormat(res.summary.total_in));
+                $('#fcTotalOut').text(fcFormat(res.summary.total_out));
+                $('#fcPoOut').text(fcFormat(res.summary.po_out));
+                $('#fcSpkIn').text(fcFormat(res.summary.spk_in));
+                $('#fcOpsOut').text(fcFormat(res.summary.ops_out));
+                $('#fcNet').text(fcFormat(res.summary.net_cashflow));
                 
                 // Update chart
                 let labels = res.monthly.map(m => m.label);
-                let dataRevJasa = res.monthly.map(m => m.revenue_jasa);
-                let dataRevSpare = res.monthly.map(m => m.revenue_spare);
-                let dataProfit = res.monthly.map(m => m.profit);
+                let dataIn = res.monthly.map(m => m.total_in);
+                let dataOut = res.monthly.map(m => m.total_out);
+                let dataNet = res.monthly.map(m => m.net);
                 
                 if (financeChart) financeChart.destroy();
                 financeChart = new Chart(document.getElementById('financeChart'), {
@@ -530,9 +554,9 @@ if ($is_owner) {
                     data: {
                         labels: labels,
                         datasets: [
-                            { label: 'Revenue Jasa', data: dataRevJasa, backgroundColor: 'rgba(13,110,253,0.7)' },
-                            { label: 'Revenue Sparepart', data: dataRevSpare, backgroundColor: 'rgba(13,202,240,0.7)' },
-                            { label: 'Profit', data: dataProfit, type: 'line', borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', tension: 0.3, fill: true }
+                            { label: 'Cashflow Masuk', data: dataIn, backgroundColor: 'rgba(13,110,253,0.7)' },
+                            { label: 'Cashflow Keluar', data: dataOut, backgroundColor: 'rgba(220,53,69,0.7)' },
+                            { label: 'Net', data: dataNet, type: 'line', borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', tension: 0.3, fill: true }
                         ]
                     },
                     options: {
@@ -546,12 +570,11 @@ if ($is_owner) {
                 
                 // Update top sparepart table
                 let spHtml = '';
-                if (res.top_spareparts.length > 0) {
-                    res.top_spareparts.forEach(function(sp, i) {
-                        let profitColor = parseFloat(sp.total_profit) >= 0 ? 'text-success' : 'text-danger';
+                if (res.top_categories.length > 0) {
+                    res.top_categories.forEach(function(sp, i) {
                         spHtml += `<tr>
-                            <td><span class="badge bg-secondary me-1">${i+1}</span>${sp.nama}</td>
-                            <td class="text-end ${profitColor} fw-bold">${fcFormat(sp.total_profit)}</td>
+                            <td><span class="badge bg-secondary me-1">${i+1}</span>${financeCategoryLabel(sp.category, sp.category_name)}</td>
+                            <td class="text-end text-danger fw-bold">${fcFormat(sp.total_out)}</td>
                         </tr>`;
                     });
                 } else {
@@ -561,30 +584,36 @@ if ($is_owner) {
                 
                 // Update recent transactions table
                 let rtHtml = '';
-                const statusColors = { 'Lunas': 'success', 'Sudah Dicicil': 'warning', 'Belum Bayar': 'danger' };
                 if (res.recent.length > 0) {
                     res.recent.forEach(function(t) {
-                        let color = statusColors[t.status_piutang] || 'secondary';
+                        let directionBadge = t.direction === 'in' ? 'success' : 'danger';
+                        let refText = (t.reference_type || '-') + (t.reference_id ? '#' + t.reference_id : '');
                         rtHtml += `<tr>
-                            <td><a href="spk/index.php">${t.kode_unik_reference}</a></td>
                             <td>${t.tanggal}</td>
-                            <td>${t.customer_name}</td>
-                            <td>${t.nomor_polisi} ${t.model || ''}</td>
-                            <td class="text-end">${fcFormat(t.total)}</td>
-                            <td><span class="badge bg-${color}">${t.status_piutang}</span></td>
+                            <td>${t.account_name || '-'}</td>
+                            <td>${financeCategoryLabel(t.category, t.expense_category_name)}</td>
+                            <td>${refText}</td>
+                            <td><span class="badge bg-${directionBadge}">${t.direction === 'in' ? 'Masuk' : 'Keluar'}</span></td>
+                            <td class="text-end fw-bold ${t.direction === 'in' ? 'text-success' : 'text-danger'}">${fcFormat(t.amount)}</td>
                         </tr>`;
                     });
                 } else {
                     rtHtml = '<tr><td colspan="6" class="text-center text-muted">Belum ada data</td></tr>';
                 }
                 $('#recentTransTable').html(rtHtml);
+
+                updateFinancePdfUrl();
             }
         });
     }
     
     $(document).ready(function() {
+        updateFinancePdfUrl();
         loadFinanceDashboard();
-        $('#financeMonthFilter').on('change', loadFinanceDashboard);
+        $('#financeMonthFilter').on('change', function() {
+            updateFinancePdfUrl();
+            loadFinanceDashboard();
+        });
     });
     </script>
     <?php endif; ?>

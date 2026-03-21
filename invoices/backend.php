@@ -19,20 +19,6 @@ finance_ensure_default_accounts($conn);
 $spkItemPriceColRes = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
 $hasSpkItemPriceCol = $spkItemPriceColRes && mysqli_num_rows($spkItemPriceColRes) > 0;
 
-function get_sparepart_ratio(mysqli $conn, int $invoiceId): float {
-    $q = mysqli_query($conn, "SELECT biaya_sparepart, total FROM invoices WHERE id = $invoiceId LIMIT 1");
-    $row = mysqli_fetch_assoc($q);
-    if (!$row) {
-        return 0;
-    }
-    $total = (float)$row['total'];
-    $spare = (float)$row['biaya_sparepart'];
-    if ($total <= 0) {
-        return 0;
-    }
-    return max(0, min(1, $spare / $total));
-}
-
 function has_payment_finance_columns(mysqli $conn): bool {
     $res = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE 'finance_tx_id'");
     return $res && mysqli_num_rows($res) > 0;
@@ -306,8 +292,8 @@ elseif ($action === 'create_payment') {
             throw new Exception('Akun keuangan tidak ditemukan');
         }
 
-        $ratio = get_sparepart_ratio($conn, $invoice_id);
-        $financeAmount = round($amount * $ratio, 2);
+        // Cashflow masuk harus mengikuti nominal pembayaran aktual invoice.
+        $financeAmount = $amount;
         $txId = null;
         if ($financeAmount > 0) {
             $tx = finance_add_transaction(
@@ -315,7 +301,7 @@ elseif ($action === 'create_payment') {
                 $tanggal,
                 (int)$account['id'],
                 'in',
-                'invoice_sparepart_in',
+            'IN-CUST-PAYMENT',
                 $financeAmount,
                 'invoice',
                 $invoice_id,
@@ -443,12 +429,30 @@ elseif ($action === 'edit_payment') {
     
     mysqli_begin_transaction($conn);
     try {
-        $qPayMeta = mysqli_query($conn, "SELECT finance_tx_id FROM payments WHERE id = $payment_id LIMIT 1");
+        $qPayMeta = mysqli_query($conn, "SELECT finance_tx_id, finance_amount FROM payments WHERE id = $payment_id LIMIT 1");
         $payMeta = $qPayMeta ? mysqli_fetch_assoc($qPayMeta) : null;
         if ($payMeta && !empty($payMeta['finance_tx_id'])) {
             $reverse = finance_reverse_transaction($conn, (int)$payMeta['finance_tx_id']);
             if (!$reverse['success']) {
                 throw new Exception($reverse['message']);
+            }
+        } elseif ($payMeta && (float)($payMeta['finance_amount'] ?? 0) > 0) {
+            // Legacy rows may not store finance_tx_id. Try to reverse matching old invoice-in row.
+            $legacyAmount = (float)$payMeta['finance_amount'];
+            $qLegacy = mysqli_query($conn, "SELECT id FROM finance_transactions
+                                            WHERE reference_type = 'invoice'
+                                              AND reference_id = $invoice_id
+                                              AND direction = 'in'
+                                              AND category = 'IN-CUST-SPAREPART'
+                                              AND amount = $legacyAmount
+                                            ORDER BY id DESC
+                                            LIMIT 1");
+            $legacyTx = $qLegacy ? mysqli_fetch_assoc($qLegacy) : null;
+            if ($legacyTx && !empty($legacyTx['id'])) {
+                $reverse = finance_reverse_transaction($conn, (int)$legacyTx['id']);
+                if (!$reverse['success']) {
+                    throw new Exception($reverse['message']);
+                }
             }
         }
 
@@ -458,8 +462,8 @@ elseif ($action === 'edit_payment') {
             throw new Exception('Akun keuangan tidak ditemukan');
         }
 
-        $ratio = get_sparepart_ratio($conn, $invoice_id);
-        $financeAmount = round($new_amount * $ratio, 2);
+        // Cashflow masuk harus mengikuti nominal pembayaran aktual invoice.
+        $financeAmount = $new_amount;
         $newTxId = null;
         if ($financeAmount > 0) {
             $tx = finance_add_transaction(
@@ -467,7 +471,7 @@ elseif ($action === 'edit_payment') {
                 $tanggal,
                 (int)$account['id'],
                 'in',
-                'invoice_sparepart_in',
+            'IN-CUST-PAYMENT',
                 $financeAmount,
                 'invoice',
                 $invoice_id,
@@ -561,12 +565,30 @@ elseif ($action === 'delete_payment') {
     
     mysqli_begin_transaction($conn);
     try {
-        $qPayMeta = mysqli_query($conn, "SELECT finance_tx_id FROM payments WHERE id = $payment_id LIMIT 1");
+        $qPayMeta = mysqli_query($conn, "SELECT finance_tx_id, finance_amount FROM payments WHERE id = $payment_id LIMIT 1");
         $payMeta = $qPayMeta ? mysqli_fetch_assoc($qPayMeta) : null;
         if ($payMeta && !empty($payMeta['finance_tx_id'])) {
             $reverse = finance_reverse_transaction($conn, (int)$payMeta['finance_tx_id']);
             if (!$reverse['success']) {
                 throw new Exception($reverse['message']);
+            }
+        } elseif ($payMeta && (float)($payMeta['finance_amount'] ?? 0) > 0) {
+            // Legacy rows may not store finance_tx_id. Try to reverse matching old invoice-in row.
+            $legacyAmount = (float)$payMeta['finance_amount'];
+            $qLegacy = mysqli_query($conn, "SELECT id FROM finance_transactions
+                                            WHERE reference_type = 'invoice'
+                                              AND reference_id = $invoice_id
+                                              AND direction = 'in'
+                                              AND category = 'IN-CUST-SPAREPART'
+                                              AND amount = $legacyAmount
+                                            ORDER BY id DESC
+                                            LIMIT 1");
+            $legacyTx = $qLegacy ? mysqli_fetch_assoc($qLegacy) : null;
+            if ($legacyTx && !empty($legacyTx['id'])) {
+                $reverse = finance_reverse_transaction($conn, (int)$legacyTx['id']);
+                if (!$reverse['success']) {
+                    throw new Exception($reverse['message']);
+                }
             }
         }
 
