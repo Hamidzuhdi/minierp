@@ -37,6 +37,10 @@ $qSpareRevenue = "SELECT COALESCE(SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 
                   JOIN invoices i ON i.spk_id = si.spk_id
                   WHERE i.status_piutang = 'Lunas' $month_filter_invoice";
 
+$qServiceRevenue = "SELECT COALESCE(SUM(i.biaya_jasa), 0) total
+                    FROM invoices i
+                    WHERE i.status_piutang = 'Lunas' $month_filter_invoice";
+
 if ($has_hpp_col) {
     $qSpareHpp = "SELECT COALESCE(SUM(si.qty * si.hpp_satuan), 0) total
                   FROM spk_items si
@@ -51,8 +55,11 @@ if ($has_hpp_col) {
 }
 
 $spare_revenue = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareRevenue))['total'];
+$service_revenue = (float)mysqli_fetch_assoc(mysqli_query($conn, $qServiceRevenue))['total'];
 $spare_hpp = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareHpp))['total'];
 $spare_profit = $spare_revenue - $spare_hpp;
+$laba_kotor = ($service_revenue + $spare_revenue) - $spare_hpp;
+$laba_bersih = $laba_kotor - $ops_out;
 
 $cashAcc = finance_get_account_by_code($conn, 'cash');
 $bankAcc = finance_get_account_by_code($conn, 'bank');
@@ -113,10 +120,11 @@ $html = '
 body { font-family: sans-serif; font-size: 10pt; color: #222; }
 h2 { margin: 0 0 6px 0; color: #0b5ed7; }
 .small { color: #666; font-size: 9pt; }
-.summary-grid { width: 100%; border-collapse: collapse; margin-top: 12px; }
-.summary-grid td { border: 1px solid #ddd; padding: 8px; width: 33.33%; vertical-align: top; }
-.summary-title { color: #666; font-size: 8.5pt; margin-bottom: 4px; }
-.summary-value { font-size: 12pt; font-weight: bold; }
+.summary-list { border: 1px solid #ddd; margin-top: 12px; }
+.summary-row { border-bottom: 1px solid #eee; padding: 7px 10px; }
+.summary-row:last-child { border-bottom: 0; }
+.summary-title { color: #666; font-size: 9pt; }
+.summary-value { font-size: 11pt; font-weight: bold; float: right; }
 .section-title { margin-top: 14px; font-size: 11pt; font-weight: bold; color: #333; }
 table { width: 100%; border-collapse: collapse; margin-top: 6px; }
 th, td { border: 1px solid #ddd; padding: 6px; }
@@ -132,50 +140,20 @@ th { background: #f5f5f5; text-align: left; }
 <div class="small">Dicetak oleh: ' . htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Owner') . '</div>
 <div class="small">Generated at: ' . $generated_at . '</div>
 
-<table class="summary-grid">
-    <tr>
-        <td>
-            <div class="summary-title">Cashflow Masuk</div>
-            <div class="summary-value">' . rupiah($total_in) . '</div>
-        </td>
-        <td>
-            <div class="summary-title">Cashflow Keluar</div>
-            <div class="summary-value">' . rupiah($total_out) . '</div>
-        </td>
-        <td>
-            <div class="summary-title">Net Cashflow</div>
-            <div class="summary-value">' . rupiah($net) . '</div>
-        </td>
-    </tr>
-    <tr>
-        <td>
-            <div class="summary-title">Pengeluaran PO</div>
-            <div class="summary-value">' . rupiah($po_out) . '</div>
-        </td>
-        <td>
-            <div class="summary-title">Biaya Operasional</div>
-            <div class="summary-value">' . rupiah($ops_out) . '</div>
-        </td>
-        <td>
-            <div class="summary-title">Saldo Akhir (Cash + Bank)</div>
-            <div class="summary-value">' . rupiah($saldo_akhir) . '</div>
-        </td>
-    </tr>
-    <tr>
-        <td>
-            <div class="summary-title">Pendapatan Sparepart (Lunas)</div>
-            <div class="summary-value">' . rupiah($spare_revenue) . '</div>
-        </td>
-        <td>
-            <div class="summary-title">HPP Sparepart (Lunas)</div>
-            <div class="summary-value">' . rupiah($spare_hpp) . '</div>
-        </td>
-        <td>
-            <div class="summary-title">Profit Sparepart (Setelah HPP)</div>
-            <div class="summary-value">' . rupiah($spare_profit) . '</div>
-        </td>
-    </tr>
-</table>
+<div class="summary-list">
+    <div class="summary-row"><span class="summary-title">Cashflow Masuk</span><span class="summary-value">' . rupiah($total_in) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Cashflow Keluar</span><span class="summary-value">' . rupiah($total_out) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Net Cashflow</span><span class="summary-value">' . rupiah($net) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Pengeluaran PO</span><span class="summary-value">' . rupiah($po_out) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Biaya Operasional</span><span class="summary-value">' . rupiah($ops_out) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Saldo Akhir (Cash + Bank)</span><span class="summary-value">' . rupiah($saldo_akhir) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Pendapatan Jasa (Lunas)</span><span class="summary-value">' . rupiah($service_revenue) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Pendapatan Sparepart (Lunas)</span><span class="summary-value">' . rupiah($spare_revenue) . '</span></div>
+    <div class="summary-row"><span class="summary-title">HPP Sparepart (Lunas)</span><span class="summary-value">' . rupiah($spare_hpp) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Profit Sparepart (Setelah HPP)</span><span class="summary-value">' . rupiah($spare_profit) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Laba Kotor (Jasa + Sparepart - HPP)</span><span class="summary-value">' . rupiah($laba_kotor) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Laba Bersih (Laba Kotor - Biaya Operasional)</span><span class="summary-value">' . rupiah($laba_bersih) . '</span></div>
+</div>
 
 <div class="section-title">Top Kategori Pengeluaran</div>
 <table>
