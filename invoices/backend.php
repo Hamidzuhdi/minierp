@@ -19,15 +19,119 @@ finance_ensure_default_accounts($conn);
 $spkItemPriceColRes = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
 $hasSpkItemPriceCol = $spkItemPriceColRes && mysqli_num_rows($spkItemPriceColRes) > 0;
 
+function ensure_invoice_user_column(mysqli $conn): void {
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM invoices LIKE 'user_id'");
+    if ($res && mysqli_num_rows($res) === 0) {
+        mysqli_query($conn, "ALTER TABLE invoices ADD COLUMN user_id INT NULL AFTER note");
+    }
+
+    $idxRes = mysqli_query($conn, "SHOW INDEX FROM invoices WHERE Key_name = 'idx_invoices_user_id'");
+    if (!$idxRes || mysqli_num_rows($idxRes) === 0) {
+        mysqli_query($conn, "ALTER TABLE invoices ADD INDEX idx_invoices_user_id (user_id)");
+    }
+
+    $fkRes = mysqli_query($conn, "
+        SELECT 1
+        FROM information_schema.TABLE_CONSTRAINTS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'invoices'
+          AND CONSTRAINT_NAME = 'fk_invoices_user'
+          AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+        LIMIT 1
+    ");
+    if (!$fkRes || mysqli_num_rows($fkRes) === 0) {
+        mysqli_query($conn, "
+            ALTER TABLE invoices
+            ADD CONSTRAINT fk_invoices_user
+            FOREIGN KEY (user_id) REFERENCES users(id)
+            ON UPDATE CASCADE
+            ON DELETE SET NULL
+        ");
+    }
+}
+
+function ensure_payment_approval_columns(mysqli $conn): void {
+    $checks = [
+        'approval_status' => "ALTER TABLE payments ADD COLUMN approval_status ENUM('approved','pending_create','pending_edit','pending_delete','rejected') NOT NULL DEFAULT 'approved' AFTER finance_amount",
+        'approval_note' => "ALTER TABLE payments ADD COLUMN approval_note TEXT NULL AFTER approval_status",
+        'requested_by' => "ALTER TABLE payments ADD COLUMN requested_by INT NULL AFTER approval_note",
+        'requested_at' => "ALTER TABLE payments ADD COLUMN requested_at DATETIME NULL AFTER requested_by",
+        'approved_by' => "ALTER TABLE payments ADD COLUMN approved_by INT NULL AFTER requested_at",
+        'approved_at' => "ALTER TABLE payments ADD COLUMN approved_at DATETIME NULL AFTER approved_by",
+        'pending_amount' => "ALTER TABLE payments ADD COLUMN pending_amount DECIMAL(14,2) NULL AFTER approved_at",
+        'pending_tanggal' => "ALTER TABLE payments ADD COLUMN pending_tanggal DATE NULL AFTER pending_amount",
+        'pending_method' => "ALTER TABLE payments ADD COLUMN pending_method ENUM('cash','transfer') NULL AFTER pending_tanggal",
+        'pending_note' => "ALTER TABLE payments ADD COLUMN pending_note TEXT NULL AFTER pending_method",
+    ];
+
+    foreach ($checks as $col => $ddl) {
+        $res = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE '$col'");
+        if ($res && mysqli_num_rows($res) === 0) {
+            mysqli_query($conn, $ddl);
+        }
+    }
+}
+
+function approved_payment_where_clause(bool $hasApprovalCols, string $alias = 'p'): string {
+    if (!$hasApprovalCols) {
+        return '';
+    }
+    return " AND ($alias.approval_status = 'approved' OR $alias.approval_status IS NULL)";
+}
+
+function recalc_invoice_status(mysqli $conn, int $invoiceId, bool $hasApprovalCols): array {
+    $approvedCond = approved_payment_where_clause($hasApprovalCols, 'p');
+    $qInv = mysqli_query($conn, "SELECT total FROM invoices WHERE id = $invoiceId LIMIT 1");
+    $inv = $qInv ? mysqli_fetch_assoc($qInv) : null;
+    if (!$inv) {
+        return ['success' => false, 'message' => 'Invoice tidak ditemukan'];
+    }
+
+    $qPaid = mysqli_query($conn, "SELECT COALESCE(SUM(p.amount), 0) total_paid FROM payments p WHERE p.invoice_id = $invoiceId $approvedCond");
+    $paid = (float)(mysqli_fetch_assoc($qPaid)['total_paid'] ?? 0);
+    $total = (float)$inv['total'];
+    $sisa = $total - $paid;
+
+    $newStatus = 'Belum Bayar';
+    $paidAtSql = 'NULL';
+    if ($sisa <= 0 && $total > 0) {
+        $newStatus = 'Lunas';
+        $qLastPaid = mysqli_query($conn, "SELECT MAX(p.tanggal) last_paid_date FROM payments p WHERE p.invoice_id = $invoiceId $approvedCond");
+        $lastPaidDate = $qLastPaid ? (mysqli_fetch_assoc($qLastPaid)['last_paid_date'] ?? null) : null;
+        if ($lastPaidDate) {
+            $paidAtSql = "'" . mysqli_real_escape_string($conn, $lastPaidDate) . "'";
+        }
+    } elseif ($paid > 0) {
+        $newStatus = 'Sudah Dicicil';
+    }
+
+    $ok = mysqli_query($conn, "UPDATE invoices SET status_piutang = '$newStatus', paid_at = $paidAtSql WHERE id = $invoiceId");
+    if (!$ok) {
+        return ['success' => false, 'message' => 'Gagal update status invoice: ' . mysqli_error($conn)];
+    }
+
+    return [
+        'success' => true,
+        'status' => $newStatus,
+        'total_paid' => $paid,
+        'sisa' => $sisa,
+    ];
+}
+
+ensure_payment_approval_columns($conn);
+ensure_invoice_user_column($conn);
+$paymentApprovalColRes = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE 'approval_status'");
+$hasPaymentApprovalCols = $paymentApprovalColRes && mysqli_num_rows($paymentApprovalColRes) > 0;
+
 function has_payment_finance_columns(mysqli $conn): bool {
     $res = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE 'finance_tx_id'");
     return $res && mysqli_num_rows($res) > 0;
 }
 
-// CREATE INVOICE - Hanya Owner yang bisa buat invoice
+// CREATE INVOICE - Owner/Admin bisa buat invoice
 if ($action === 'create_invoice') {
-    if ($user_role !== 'Owner') {
-        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa membuat invoice']);
+    if (!in_array($user_role, ['Owner', 'Admin'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner/Admin yang bisa membuat invoice']);
         exit;
     }
     
@@ -94,8 +198,8 @@ if ($action === 'create_invoice') {
     $no_invoice = $prefix . '-' . $date_code . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
     
     // Insert invoice
-    $sql = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, total, status_piutang, metode_pembayaran, created_at)
-            VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'Belum Bayar', 'cash', NOW())";
+        $sql = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, total, metode_pembayaran, status_piutang, note, user_id, created_at)
+            VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'cash', 'Belum Bayar', NULL, " . (int)$_SESSION['user_id'] . ", NOW())";
     
     if (mysqli_query($conn, $sql)) {
         $invoice_id = mysqli_insert_id($conn);
@@ -117,14 +221,17 @@ elseif ($action === 'read') {
     $search = $_GET['search'] ?? '';
     $status = $_GET['status'] ?? '';
     
-    $sql = "SELECT i.*, 
+        $sql = "SELECT i.*, 
             s.kode_unik_reference as spk_code,
             c.name as customer_name, c.phone as customer_phone,
-            v.nomor_polisi, v.merk, v.model
+            v.nomor_polisi, v.merk, v.model,
+            u.username as invoice_created_by_name,
+            u.role as invoice_created_by_role
             FROM invoices i
             JOIN spk s ON i.spk_id = s.id
             JOIN customers c ON s.customer_id = c.id
-            JOIN vehicles v ON s.vehicle_id = v.id";
+            JOIN vehicles v ON s.vehicle_id = v.id
+            LEFT JOIN users u ON i.user_id = u.id";
     
     $conditions = [];
     
@@ -149,7 +256,8 @@ elseif ($action === 'read') {
     
     while ($row = mysqli_fetch_assoc($result)) {
         // Hitung total pembayaran
-        $sql_payments = "SELECT COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE invoice_id = {$row['id']}";
+        $approvedCond = approved_payment_where_clause($hasPaymentApprovalCols, 'p');
+        $sql_payments = "SELECT COALESCE(SUM(p.amount), 0) as total_paid FROM payments p WHERE p.invoice_id = {$row['id']} $approvedCond";
         $result_payments = mysqli_query($conn, $sql_payments);
         $payments_data = mysqli_fetch_assoc($result_payments);
         $row['total_paid'] = (float)$payments_data['total_paid'];
@@ -166,14 +274,17 @@ elseif ($action === 'read_one') {
     $id = (int)$_GET['id'];
     
     // Get invoice header
-    $sql = "SELECT i.*, 
+        $sql = "SELECT i.*, 
             s.kode_unik_reference as spk_code, s.tanggal as spk_tanggal, s.keluhan_customer,
             c.name as customer_name, c.phone as customer_phone, c.address as customer_address,
-            v.nomor_polisi, v.merk, v.model, v.tahun
+            v.nomor_polisi, v.merk, v.model, v.tahun,
+            u.username as invoice_created_by_name,
+            u.role as invoice_created_by_role
             FROM invoices i
             JOIN spk s ON i.spk_id = s.id
             JOIN customers c ON s.customer_id = c.id
             JOIN vehicles v ON s.vehicle_id = v.id
+            LEFT JOIN users u ON i.user_id = u.id
             WHERE i.id = $id";
     
     $result = mysqli_query($conn, $sql);
@@ -219,16 +330,23 @@ elseif ($action === 'read_one') {
         $row['items'] = $items;
         
         // Get payments history
-        $sql_payments = "SELECT p.*
-                        FROM payments p
-                        WHERE p.invoice_id = $id
-                        ORDER BY p.tanggal DESC, p.id DESC";
+        $sql_payments = "SELECT p.*, 
+                    ur.username as requested_by_name,
+                    ua.username as approved_by_name
+                 FROM payments p
+                 LEFT JOIN users ur ON p.requested_by = ur.id
+                 LEFT JOIN users ua ON p.approved_by = ua.id
+                 WHERE p.invoice_id = $id
+                 ORDER BY p.tanggal DESC, p.id DESC";
         $result_payments = mysqli_query($conn, $sql_payments);
         
         $payments = [];
         $total_paid = 0;
         while ($payment = mysqli_fetch_assoc($result_payments)) {
-            $total_paid += (float)$payment['amount'];
+            $isApproved = !$hasPaymentApprovalCols || ($payment['approval_status'] === null || $payment['approval_status'] === 'approved');
+            if ($isApproved) {
+                $total_paid += (float)$payment['amount'];
+            }
             $payments[] = $payment;
         }
         $row['payments'] = $payments;
@@ -272,8 +390,9 @@ elseif ($action === 'create_payment') {
         exit;
     }
     
-    // Hitung total pembayaran sebelumnya
-    $sql_paid = "SELECT COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE invoice_id = $invoice_id";
+    // Hitung total pembayaran approved sebelumnya
+    $approvedCond = approved_payment_where_clause($hasPaymentApprovalCols, 'p');
+    $sql_paid = "SELECT COALESCE(SUM(p.amount), 0) as total_paid FROM payments p WHERE p.invoice_id = $invoice_id $approvedCond";
     $result_paid = mysqli_query($conn, $sql_paid);
     $paid_data = mysqli_fetch_assoc($result_paid);
     $total_paid = (float)$paid_data['total_paid'];
@@ -287,12 +406,12 @@ elseif ($action === 'create_payment') {
     
     mysqli_begin_transaction($conn);
     try {
+        // Admin/Owner: langsung apply ke keuangan tanpa approval.
         $account = finance_get_account_by_code($conn, $accountCode);
         if (!$account) {
             throw new Exception('Akun keuangan tidak ditemukan');
         }
 
-        // Cashflow masuk harus mengikuti nominal pembayaran aktual invoice.
         $financeAmount = $amount;
         $txId = null;
         if ($financeAmount > 0) {
@@ -301,7 +420,7 @@ elseif ($action === 'create_payment') {
                 $tanggal,
                 (int)$account['id'],
                 'in',
-            'IN-CUST-PAYMENT',
+                'IN-CUST-PAYMENT',
                 $financeAmount,
                 'invoice',
                 $invoice_id,
@@ -314,10 +433,9 @@ elseif ($action === 'create_payment') {
             $txId = (int)$tx['transaction_id'];
         }
 
-        // Insert payment
         if (has_payment_finance_columns($conn)) {
-            $sql = "INSERT INTO payments (invoice_id, amount, tanggal, method, finance_account_id, finance_tx_id, finance_amount, note, created_at)
-                    VALUES ($invoice_id, $amount, '$tanggal', '$method', {$account['id']}, " . ($txId ?: 'NULL') . ", $financeAmount, '$note', NOW())";
+                $sql = "INSERT INTO payments (invoice_id, amount, tanggal, method, finance_account_id, finance_tx_id, finance_amount, note, approval_status, requested_by, requested_at, approved_by, approved_at, created_at)
+                    VALUES ($invoice_id, $amount, '$tanggal', '$method', {$account['id']}, " . ($txId ?: 'NULL') . ", $financeAmount, '$note', 'approved', {$_SESSION['user_id']}, NOW(), {$_SESSION['user_id']}, NOW(), NOW())";
         } else {
             $sql = "INSERT INTO payments (invoice_id, amount, tanggal, method, note, created_at)
                     VALUES ($invoice_id, $amount, '$tanggal', '$method', '$note', NOW())";
@@ -328,41 +446,24 @@ elseif ($action === 'create_payment') {
         }
 
         $payment_id = mysqli_insert_id($conn);
-        
-        // Update total pembayaran
-        $new_total_paid = $total_paid + $amount;
-        $new_sisa = $invoice['total'] - $new_total_paid;
-        
-        // Update status piutang
-        $new_status = 'Belum Bayar';
-        $paid_at = 'NULL';
-        
-        if ($new_sisa <= 0) {
-            $new_status = 'Lunas';
-            $paid_at = "'$tanggal'";
-        } elseif ($new_total_paid > 0) {
-            $new_status = 'Sudah Dicicil';
+
+        $recalc = recalc_invoice_status($conn, $invoice_id, $hasPaymentApprovalCols);
+        if (!$recalc['success']) {
+            throw new Exception($recalc['message']);
         }
-        
-        $sql_update = "UPDATE invoices SET status_piutang = '$new_status', paid_at = $paid_at WHERE id = $invoice_id";
-        if (!mysqli_query($conn, $sql_update)) {
-            throw new Exception('Gagal update status invoice');
-        }
-        
-        // Audit log
-        $log_msg = "Pembayaran Rp " . number_format($amount, 0, ',', '.') . " untuk Invoice #$invoice_id via $method";
-        $sql_log = "INSERT INTO audit_logs (user_id, action, target_table, target_id, description, created_at)
-                    VALUES ({$_SESSION['user_id']}, 'CREATE', 'payments', $payment_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())";
-        mysqli_query($conn, $sql_log);
+
+        $log_msg = "Pembayaran Rp " . number_format($amount, 0, ',', '.') . " untuk Invoice #$invoice_id via $method (langsung tercatat)";
+        mysqli_query($conn, "INSERT INTO audit_logs (user_id, action, target_table, target_id, description, created_at)
+                            VALUES ({$_SESSION['user_id']}, 'CREATE', 'payments', $payment_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())");
 
         mysqli_commit($conn);
-        
+
         echo json_encode([
-            'success' => true, 
+            'success' => true,
             'message' => 'Pembayaran berhasil dicatat',
-            'new_status' => $new_status,
-            'new_total_paid' => $new_total_paid,
-            'new_sisa' => $new_sisa
+            'new_status' => $recalc['status'],
+            'new_total_paid' => $recalc['total_paid'],
+            'new_sisa' => $recalc['sisa']
         ]);
     } catch (Exception $e) {
         mysqli_rollback($conn);
@@ -412,8 +513,9 @@ elseif ($action === 'edit_payment') {
         exit;
     }
     
-    // Hitung total pembayaran (exclude yang sedang diedit)
-    $sql_paid = "SELECT COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE invoice_id = $invoice_id AND id != $payment_id";
+    // Hitung total pembayaran approved (exclude yang sedang diedit)
+    $approvedCond = approved_payment_where_clause($hasPaymentApprovalCols, 'p');
+    $sql_paid = "SELECT COALESCE(SUM(p.amount), 0) as total_paid FROM payments p WHERE p.invoice_id = $invoice_id AND p.id != $payment_id $approvedCond";
     $result_paid = mysqli_query($conn, $sql_paid);
     $paid_data = mysqli_fetch_assoc($result_paid);
     $total_paid_others = (float)$paid_data['total_paid'];
@@ -504,20 +606,9 @@ elseif ($action === 'edit_payment') {
             throw new Exception('Gagal mengupdate pembayaran: ' . mysqli_error($conn));
         }
 
-        // Update status piutang
-        $new_status = 'Belum Bayar';
-        $paid_at = 'NULL';
-        
-        if ($sisa <= 0) {
-            $new_status = 'Lunas';
-            $paid_at = "'$tanggal'";
-        } elseif ($new_total_paid > 0) {
-            $new_status = 'Sudah Dicicil';
-        }
-        
-        $sql_update = "UPDATE invoices SET status_piutang = '$new_status', paid_at = $paid_at WHERE id = $invoice_id";
-        if (!mysqli_query($conn, $sql_update)) {
-            throw new Exception('Gagal update status invoice');
+        $recalc = recalc_invoice_status($conn, $invoice_id, $hasPaymentApprovalCols);
+        if (!$recalc['success']) {
+            throw new Exception($recalc['message']);
         }
         
         // Audit log
@@ -531,9 +622,9 @@ elseif ($action === 'edit_payment') {
         echo json_encode([
             'success' => true, 
             'message' => 'Pembayaran berhasil diupdate',
-            'new_status' => $new_status,
-            'new_total_paid' => $new_total_paid,
-            'new_sisa' => $sisa
+            'new_status' => $recalc['status'],
+            'new_total_paid' => $recalc['total_paid'],
+            'new_sisa' => $recalc['sisa']
         ]);
     } catch (Exception $e) {
         mysqli_rollback($conn);
@@ -543,11 +634,6 @@ elseif ($action === 'edit_payment') {
 
 // DELETE PAYMENT - Hapus cicilan (hanya yang terakhir)
 elseif ($action === 'delete_payment') {
-    if ($user_role !== 'Owner') {
-        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa hapus pembayaran']);
-        exit;
-    }
-    
     $payment_id = (int)$_POST['payment_id'];
     
     // Get payment data
@@ -562,6 +648,7 @@ elseif ($action === 'delete_payment') {
     
     $invoice_id = $payment['invoice_id'];
     $amount = (float)$payment['amount'];
+
     
     mysqli_begin_transaction($conn);
     try {
@@ -598,30 +685,9 @@ elseif ($action === 'delete_payment') {
             throw new Exception('Gagal menghapus pembayaran: ' . mysqli_error($conn));
         }
 
-        // Hitung ulang total pembayaran
-        $sql_paid = "SELECT COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE invoice_id = $invoice_id";
-        $result_paid = mysqli_query($conn, $sql_paid);
-        $paid_data = mysqli_fetch_assoc($result_paid);
-        $total_paid = (float)$paid_data['total_paid'];
-        
-        // Get total
-        $sql_invoice = "SELECT total FROM invoices WHERE id = $invoice_id";
-        $result_invoice = mysqli_query($conn, $sql_invoice);
-        $invoice = mysqli_fetch_assoc($result_invoice);
-        
-        $sisa = $invoice['total'] - $total_paid;
-        
-        // Update status piutang
-        $new_status = 'Belum Bayar';
-        if ($sisa <= 0) {
-            $new_status = 'Lunas';
-        } elseif ($total_paid > 0) {
-            $new_status = 'Sudah Dicicil';
-        }
-        
-        $sql_update = "UPDATE invoices SET status_piutang = '$new_status', paid_at = NULL WHERE id = $invoice_id";
-        if (!mysqli_query($conn, $sql_update)) {
-            throw new Exception('Gagal update status invoice setelah hapus pembayaran');
+        $recalc = recalc_invoice_status($conn, $invoice_id, $hasPaymentApprovalCols);
+        if (!$recalc['success']) {
+            throw new Exception($recalc['message']);
         }
         
         // Audit log
@@ -639,10 +705,18 @@ elseif ($action === 'delete_payment') {
     }
 }
 
+elseif ($action === 'approve_payment') {
+    echo json_encode(['success' => false, 'message' => 'Flow approval pembayaran invoice dinonaktifkan. Simpan/Edit/Hapus langsung diproses.']);
+}
+
+elseif ($action === 'reject_payment') {
+    echo json_encode(['success' => false, 'message' => 'Flow approval pembayaran invoice dinonaktifkan.']);
+}
+
 // AUTO CREATE INVOICES - Create invoices for all SPK ready
 elseif ($action === 'auto_create_invoices') {
-    if ($user_role !== 'Owner') {
-        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa membuat invoice']);
+    if (!in_array($user_role, ['Owner', 'Admin'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner/Admin yang bisa membuat invoice']);
         exit;
     }
     
@@ -693,8 +767,8 @@ elseif ($action === 'auto_create_invoices') {
         $no_invoice = $prefix . '-' . $date_code . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
         
         // Insert invoice
-        $sql_insert = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, total, status_piutang, metode_pembayaran, created_at)
-                VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'Belum Bayar', 'cash', NOW())";
+        $sql_insert = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, total, metode_pembayaran, status_piutang, note, user_id, created_at)
+            VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'cash', 'Belum Bayar', NULL, " . (int)$_SESSION['user_id'] . ", NOW())";
         
         if (mysqli_query($conn, $sql_insert)) {
             $created_count++;

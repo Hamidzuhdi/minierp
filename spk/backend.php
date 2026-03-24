@@ -16,6 +16,18 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $stock_col_check = mysqli_query($conn, "SHOW COLUMNS FROM spareparts LIKE 'current_stock'");
 $sparepart_stock_col = (mysqli_num_rows($stock_col_check) > 0) ? 'current_stock' : 'stok';
 
+// Ensure status_spk enum includes Dibatalkan.
+$status_col_res = mysqli_query($conn, "SHOW COLUMNS FROM spk LIKE 'status_spk'");
+if ($status_col_res && ($status_col = mysqli_fetch_assoc($status_col_res))) {
+    $status_type = (string)($status_col['Type'] ?? '');
+    if (stripos($status_type, "'Dibatalkan'") === false) {
+        @mysqli_query(
+            $conn,
+            "ALTER TABLE spk MODIFY COLUMN status_spk ENUM('Menunggu Konfirmasi','Disetujui','Dalam Pengerjaan','Selesai','Dikirim ke Owner','Buat Invoice','Sudah Cetak Invoice','Dibatalkan') DEFAULT 'Menunggu Konfirmasi'"
+        );
+    }
+}
+
 // CREATE - Buat SPK Baru
 if ($action === 'create') {
     $customer_id = (int)$_POST['customer_id'];
@@ -261,14 +273,38 @@ elseif ($action === 'update_status') {
     $status = $_POST['status'];
     
     // Validasi status
-    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice'];
+    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice', 'Dibatalkan'];
     if (!in_array($status, $valid_statuses)) {
         echo json_encode(['success' => false, 'message' => 'Status tidak valid']);
         exit;
     }
-    
-    $sql = "UPDATE spk SET status_spk = '" . mysqli_real_escape_string($conn, $status) . "' WHERE id = $id";
-    
+
+    $spk_res = mysqli_query($conn, "SELECT status_spk FROM spk WHERE id = $id LIMIT 1");
+    $spk_row = $spk_res ? mysqli_fetch_assoc($spk_res) : null;
+    if (!$spk_row) {
+        echo json_encode(['success' => false, 'message' => 'SPK tidak ditemukan']);
+        exit;
+    }
+
+    $old_status = (string)($spk_row['status_spk'] ?? '');
+    $target_status = mysqli_real_escape_string($conn, $status);
+
+    // Jika dibatalkan, kembalikan stok sekali (idempotent) saat transisi ke Dibatalkan.
+    if ($old_status !== 'Dibatalkan' && $status === 'Dibatalkan') {
+        $restore_res = mysqli_query($conn, "SELECT sparepart_id, SUM(qty) as qty_total FROM spk_items WHERE spk_id = $id GROUP BY sparepart_id");
+        if (!$restore_res) {
+            echo json_encode(['success' => false, 'message' => 'Gagal membaca item SPK untuk pembatalan: ' . mysqli_error($conn)]);
+            exit;
+        }
+
+        while ($it = mysqli_fetch_assoc($restore_res)) {
+            $sparepart_id = (int)$it['sparepart_id'];
+            $qty_total = (int)$it['qty_total'];
+            mysqli_query($conn, "UPDATE spareparts SET {$sparepart_stock_col} = {$sparepart_stock_col} + $qty_total WHERE id = $sparepart_id");
+        }
+    }
+
+    $sql = "UPDATE spk SET status_spk = '$target_status' WHERE id = $id";
     if (mysqli_query($conn, $sql)) {
         echo json_encode(['success' => true, 'message' => 'Status SPK berhasil diupdate']);
     } else {
@@ -380,7 +416,7 @@ elseif ($action === 'add_sparepart') {
     }
     
     if (mysqli_query($conn, $sql)) {
-        // Decrease stock
+        // Decrease stock immediately after item is added.
         mysqli_query($conn, "UPDATE spareparts SET {$sparepart_stock_col} = {$sparepart_stock_col} - $qty WHERE id = $sparepart_id");
         echo json_encode(['success' => true, 'message' => 'Sparepart berhasil ditambahkan ke SPK']);
     } else {
@@ -392,12 +428,12 @@ elseif ($action === 'add_sparepart') {
 elseif ($action === 'delete_sparepart') {
     $id = (int)$_POST['id'];
     
-    // Get sparepart info to restore stock
+    // Get sparepart info to restore stock.
     $get_item = mysqli_query($conn, "SELECT sparepart_id, qty FROM spk_items WHERE id = $id");
     $item = mysqli_fetch_assoc($get_item);
     
     if ($item) {
-        // Restore stock
+        // Restore stock.
         mysqli_query($conn, "UPDATE spareparts SET {$sparepart_stock_col} = {$sparepart_stock_col} + {$item['qty']} WHERE id = {$item['sparepart_id']}");
         
         // Delete from spk_items
@@ -415,29 +451,7 @@ elseif ($action === 'delete_sparepart') {
 
 // DELETE SPK (hanya jika belum ada invoice)
 elseif ($action === 'delete') {
-    $id = (int)$_POST['id'];
-    
-    // Cek apakah sudah ada invoice
-    $check = mysqli_query($conn, "SELECT COUNT(*) as cnt FROM invoices WHERE spk_id = $id");
-    $row = mysqli_fetch_assoc($check);
-    
-    if ($row['cnt'] > 0) {
-        echo json_encode(['success' => false, 'message' => 'SPK tidak dapat dihapus karena sudah ada invoice']);
-        exit;
-    }
-    
-    // Delete related data
-    mysqli_query($conn, "DELETE FROM spk_items WHERE spk_id = $id");
-    mysqli_query($conn, "DELETE FROM spk_services WHERE spk_id = $id");
-    mysqli_query($conn, "DELETE FROM warehouse_out WHERE spk_id = $id");
-    
-    $sql = "DELETE FROM spk WHERE id = $id";
-    
-    if (mysqli_query($conn, $sql)) {
-        echo json_encode(['success' => true, 'message' => 'SPK berhasil dihapus']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Gagal menghapus SPK: ' . mysqli_error($conn)]);
-    }
+    echo json_encode(['success' => false, 'message' => 'Hapus SPK dinonaktifkan. Gunakan status Dibatalkan.']);
 }
 
 else {

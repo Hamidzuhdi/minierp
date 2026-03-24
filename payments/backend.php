@@ -126,10 +126,10 @@ elseif ($action === 'summary') {
     $today = date('Y-m-d');
     $month = date('Y-m');
 
-    $qTodayIn = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as total FROM finance_transactions WHERE direction IN ('in','transfer_in') AND tanggal = '$today'");
-    $qTodayOut = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as total FROM finance_transactions WHERE direction IN ('out','transfer_out') AND tanggal = '$today'");
-    $qMonthIn = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as total FROM finance_transactions WHERE direction IN ('in','transfer_in') AND DATE_FORMAT(tanggal, '%Y-%m') = '$month'");
-    $qMonthOut = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as total FROM finance_transactions WHERE direction IN ('out','transfer_out') AND DATE_FORMAT(tanggal, '%Y-%m') = '$month'");
+    $qTodayIn = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as total FROM finance_transactions WHERE status = 'approved' AND direction IN ('in','transfer_in') AND tanggal = '$today'");
+    $qTodayOut = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as total FROM finance_transactions WHERE status = 'approved' AND direction IN ('out','transfer_out') AND tanggal = '$today'");
+    $qMonthIn = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as total FROM finance_transactions WHERE status = 'approved' AND direction IN ('in','transfer_in') AND DATE_FORMAT(tanggal, '%Y-%m') = '$month'");
+    $qMonthOut = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as total FROM finance_transactions WHERE status = 'approved' AND direction IN ('out','transfer_out') AND DATE_FORMAT(tanggal, '%Y-%m') = '$month'");
 
     echo json_encode([
         'success' => true,
@@ -153,11 +153,14 @@ elseif ($action === 'read_transactions') {
     $category = $_GET['category'] ?? '';
     $keyword = trim($_GET['keyword'] ?? '');
 
-        $sql = "SELECT ft.*, fa.code as account_code, fa.name as account_name, u.username as created_by_name,
+          $sql = "SELECT ft.*, fa.code as account_code, fa.name as account_name, u.username as created_by_name,
+                    uo.username as approved_by_name, ur.username as rejected_by_name,
                ec.name as expense_category_name
             FROM finance_transactions ft
             JOIN finance_accounts fa ON ft.account_id = fa.id
             LEFT JOIN users u ON ft.created_by = u.id
+                LEFT JOIN users uo ON ft.approved_by = uo.id
+                LEFT JOIN users ur ON ft.rejected_by = ur.id
             LEFT JOIN expense_categories ec ON ft.category = ec.code";
 
     $conds = [];
@@ -199,6 +202,66 @@ elseif ($action === 'read_transactions') {
     echo json_encode(['success' => true, 'data' => $rows]);
 }
 
+elseif ($action === 'read_pending_transactions') {
+    if ($userRole !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa melihat approval']);
+        exit;
+    }
+
+    $sql = "SELECT ft.*, fa.name as account_name, u.username as created_by_name
+            FROM finance_transactions ft
+            JOIN finance_accounts fa ON ft.account_id = fa.id
+            LEFT JOIN users u ON ft.created_by = u.id
+            WHERE ft.status = 'pending'
+            ORDER BY ft.created_at DESC, ft.id DESC
+            LIMIT 300";
+    $res = mysqli_query($conn, $sql);
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $rows[] = $r;
+    }
+
+    echo json_encode(['success' => true, 'data' => $rows]);
+}
+
+elseif ($action === 'approve_transaction') {
+    if ($userRole !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa approve']);
+        exit;
+    }
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID transaksi tidak valid']);
+        exit;
+    }
+
+    $result = finance_approve_transaction($conn, $id, (int)$_SESSION['user_id']);
+    if ($result['success']) {
+        echo json_encode(['success' => true, 'message' => 'Transaksi berhasil di-approve']);
+    } else {
+        echo json_encode(['success' => false, 'message' => $result['message'] ?? 'Gagal approve transaksi']);
+    }
+}
+
+elseif ($action === 'reject_transaction') {
+    if ($userRole !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa reject']);
+        exit;
+    }
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID transaksi tidak valid']);
+        exit;
+    }
+
+    $result = finance_reject_transaction($conn, $id, (int)$_SESSION['user_id']);
+    if ($result['success']) {
+        echo json_encode(['success' => true, 'message' => 'Transaksi berhasil di-reject']);
+    } else {
+        echo json_encode(['success' => false, 'message' => $result['message'] ?? 'Gagal reject transaksi']);
+    }
+}
+
 elseif ($action === 'create_operational_expense') {
     $tanggal = $_POST['tanggal'] ?? date('Y-m-d');
     $expenseName = trim($_POST['expense_name'] ?? '');
@@ -225,29 +288,14 @@ elseif ($action === 'create_operational_expense') {
         exit;
     }
 
+    $txStatus = ($userRole === 'Owner') ? 'approved' : 'pending';
+
     mysqli_begin_transaction($conn);
     try {
-        $tx = finance_add_transaction(
-            $conn,
-            $tanggal,
-            (int)$account['id'],
-            'out',
-            $cat['code'],
-            $amount,
-            'operational',
-            null,
-            $note !== '' ? $note : ('Pengeluaran ' . $cat['name'] . ': ' . $expenseName),
-            (int)$_SESSION['user_id']
-        );
-
-        if (!$tx['success']) {
-            throw new Exception($tx['message']);
-        }
-
         $sql = "INSERT INTO operational_expenses (tanggal, expense_name, category_code, amount, account_id, note, created_by)
                 VALUES ('" . mysqli_real_escape_string($conn, $tanggal) . "',
                         '" . mysqli_real_escape_string($conn, $expenseName) . "',
-                '" . mysqli_real_escape_string($conn, $cat['code']) . "',
+                        '" . mysqli_real_escape_string($conn, $cat['code']) . "',
                         $amount,
                         {$account['id']},
                         '" . mysqli_real_escape_string($conn, $note) . "',
@@ -258,10 +306,31 @@ elseif ($action === 'create_operational_expense') {
         }
 
         $expenseId = mysqli_insert_id($conn);
-        mysqli_query($conn, "UPDATE finance_transactions SET reference_id = $expenseId WHERE id = {$tx['transaction_id']}");
+
+        $tx = finance_add_transaction(
+            $conn,
+            $tanggal,
+            (int)$account['id'],
+            'out',
+            $cat['code'],
+            $amount,
+            'operational',
+            $expenseId,
+            $note !== '' ? $note : ('Pengeluaran ' . $cat['name'] . ': ' . $expenseName),
+            (int)$_SESSION['user_id'],
+            $txStatus
+        );
+
+        if (!$tx['success']) {
+            throw new Exception($tx['message']);
+        }
 
         mysqli_commit($conn);
-        echo json_encode(['success' => true, 'message' => 'Pengeluaran operasional berhasil dicatat']);
+        if ($txStatus === 'pending') {
+            echo json_encode(['success' => true, 'message' => 'Pengeluaran operasional berhasil diajukan, menunggu approval Owner']);
+        } else {
+            echo json_encode(['success' => true, 'message' => 'Pengeluaran operasional berhasil dicatat']);
+        }
     } catch (Exception $e) {
         mysqli_rollback($conn);
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
@@ -291,6 +360,8 @@ elseif ($action === 'create_transfer') {
         exit;
     }
 
+    $txStatus = ($userRole === 'Owner') ? 'approved' : 'pending';
+
     mysqli_begin_transaction($conn);
     try {
         $out = finance_add_transaction(
@@ -303,7 +374,8 @@ elseif ($action === 'create_transfer') {
             'transfer',
             null,
             $note !== '' ? $note : ('Transfer ke ' . $toAcc['name']),
-            (int)$_SESSION['user_id']
+            (int)$_SESSION['user_id'],
+            $txStatus
         );
         if (!$out['success']) {
             throw new Exception($out['message']);
@@ -319,7 +391,8 @@ elseif ($action === 'create_transfer') {
             'transfer',
             null,
             $note !== '' ? $note : ('Transfer dari ' . $fromAcc['name']),
-            (int)$_SESSION['user_id']
+            (int)$_SESSION['user_id'],
+            $txStatus
         );
         if (!$in['success']) {
             throw new Exception($in['message']);
@@ -329,7 +402,11 @@ elseif ($action === 'create_transfer') {
         mysqli_query($conn, "UPDATE finance_transactions SET reference_id = {$out['transaction_id']} WHERE id = {$in['transaction_id']}");
 
         mysqli_commit($conn);
-        echo json_encode(['success' => true, 'message' => 'Transfer antar akun berhasil']);
+        if ($txStatus === 'pending') {
+            echo json_encode(['success' => true, 'message' => 'Transfer berhasil diajukan, menunggu approval Owner']);
+        } else {
+            echo json_encode(['success' => true, 'message' => 'Transfer antar akun berhasil']);
+        }
     } catch (Exception $e) {
         mysqli_rollback($conn);
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);

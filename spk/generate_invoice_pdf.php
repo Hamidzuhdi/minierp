@@ -359,7 +359,7 @@ ob_start();
     <!-- Bank Account Info -->
     <div style="margin-top: 8px; padding: 8px; border: 1px solid #000; background-color: #f9f9f9;">
         <h4 style="margin: 0 0 5px 0; font-size: 10px;">Informasi Pembayaran:</h4>
-        <p style="margin: 0; font-size: 9px;"><strong>Bank BCA:</strong> 1234567890 a.n. Bengkel Mini ERP</p>
+        <p style="margin: 0; font-size: 9px;"><strong>Bank BCA:</strong> 4680408799 a.n. Moh. Ambali</p>
     </div>
 
     <!-- Warranty Terms -->

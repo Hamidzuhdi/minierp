@@ -16,6 +16,13 @@ $page_title = 'Payment & Cashflow';
 include '../header.php';
 ?>
 
+<style>
+.approval-scroll {
+    max-height: 280px;
+    overflow-y: auto;
+}
+</style>
+
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="mb-0"><i class="fas fa-wallet"></i> Payment & Cashflow</h5>
@@ -27,6 +34,39 @@ include '../header.php';
         <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><small>Total Saldo</small><h5 id="sumTotal">Rp 0</h5></div></div></div>
         <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><small>Cashflow Bulan Ini</small><h5 id="sumMonthFlow">Rp 0</h5></div></div></div>
     </div>
+
+    <?php if ($user_role === 'Owner'): ?>
+    <div class="row g-3 mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>Approval Payment (Pending)</strong>
+                    <button class="btn btn-sm btn-outline-primary" type="button" onclick="loadPendingApprovals()">Refresh</button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive approval-scroll">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>Akun</th>
+                                    <th>Arah</th>
+                                    <th>Kategori</th>
+                                    <th>Ref</th>
+                                    <th>Dibuat Oleh</th>
+                                    <th>Catatan</th>
+                                    <th class="text-end">Nominal</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="approvalTableBody"><tr><td colspan="9" class="text-center text-muted">Loading...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="row g-3">
         <div class="col-md-4">
@@ -84,7 +124,7 @@ include '../header.php';
                         <div class="col-md-2"><input type="date" class="form-control form-control-sm" id="f_to"></div>
                         <div class="col-md-2"><select class="form-select form-select-sm" id="f_account"><option value="">Semua Akun</option></select></div>
                         <div class="col-md-2"><select class="form-select form-select-sm" id="f_direction"><option value="">Semua Arah</option><option value="in">Masuk</option><option value="out">Keluar</option><option value="transfer_in">Transfer Masuk</option><option value="transfer_out">Transfer Keluar</option></select></div>
-                        <div class="col-md-2"><select class="form-select form-select-sm" id="f_category"><option value="">Semua Kategori</option><option value="IN-CUST-SPAREPART">Pemasukan Customer</option><option value="OUT-PO">Pengeluaran PO</option><option value="TRF-IN">Transfer Masuk</option><option value="TRF-OUT">Transfer Keluar</option></select></div>
+                        <div class="col-md-2"><select class="form-select form-select-sm" id="f_category"><option value="">Semua Kategori</option><option value="IN-CUST-PAYMENT">IN-CUST-PAYMENT</option><option value="IN-CUST-SPAREPART">IN-CUST-SPAREPART</option><option value="OUT-PO">OUT-PO</option><option value="TRF-IN">TRF-IN</option><option value="TRF-OUT">TRF-OUT</option></select></div>
                         <div class="col-md-2"><input type="text" class="form-control form-control-sm" id="f_keyword" placeholder="Keyword"></div>
                         <div class="col-12 col-md-2 d-grid"><button class="btn btn-sm btn-outline-primary" onclick="loadTransactions()" type="button">Filter</button></div>
                     </div>
@@ -96,13 +136,15 @@ include '../header.php';
                                     <th>Tanggal</th>
                                     <th>Akun</th>
                                     <th>Arah</th>
+                                    <th>Status</th>
                                     <th>Kategori</th>
                                     <th>Ref</th>
+                                    <th>Dibuat Oleh</th>
                                     <th>Catatan</th>
                                     <th class="text-end">Amount</th>
                                 </tr>
                             </thead>
-                            <tbody id="txTableBody"><tr><td colspan="7" class="text-center">Loading...</td></tr></tbody>
+                            <tbody id="txTableBody"><tr><td colspan="9" class="text-center">Loading...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -185,6 +227,9 @@ $(document).ready(function(){
     loadExpenseCategories();
     loadSummary();
     loadTransactions();
+    if (isOwner) {
+        loadPendingApprovals();
+    }
 
     $('#operationalForm').on('submit', function(e){
         e.preventDefault();
@@ -211,6 +256,7 @@ $(document).ready(function(){
                     loadSummary();
                     loadAccounts();
                     loadTransactions();
+                    if (isOwner) loadPendingApprovals();
                 } else {
                     showAlert('danger', res.message);
                 }
@@ -240,6 +286,7 @@ $(document).ready(function(){
                     loadSummary();
                     loadAccounts();
                     loadTransactions();
+                    if (isOwner) loadPendingApprovals();
                 } else {
                     showAlert('danger', res.message);
                 }
@@ -373,6 +420,7 @@ function loadExpenseCategories(){
 
         // Rebuild filter categories (dynamic + static)
         let fCat = '<option value="">Semua Kategori</option>' +
+                   '<option value="IN-CUST-PAYMENT">IN-CUST-PAYMENT</option>' +
                    '<option value="IN-CUST-SPAREPART">IN-CUST-SPAREPART</option>' +
                    '<option value="OUT-PO">OUT-PO</option>' +
                    '<option value="TRF-IN">TRF-IN</option>' +
@@ -447,7 +495,7 @@ function loadTransactions(){
             if (!res.success) return;
             let html = '';
             if (!res.data.length){
-                html = '<tr><td colspan="7" class="text-center text-muted">Belum ada data</td></tr>';
+                html = '<tr><td colspan="9" class="text-center text-muted">Belum ada data</td></tr>';
             } else {
                 res.data.forEach(function(t){
                     const out = (t.direction === 'out' || t.direction === 'transfer_out');
@@ -459,18 +507,122 @@ function loadTransactions(){
                         transfer_in: 'Transfer Masuk',
                         transfer_out: 'Transfer Keluar'
                     };
+                    let creatorLabel = '-';
+                    if (t.created_by) {
+                        const id = parseInt(t.created_by, 10);
+                        const roleMap = { 1: 'Owner', 2: 'Admin' };
+                        creatorLabel = roleMap[id] || ('User #' + id);
+                        if (t.created_by_name) {
+                            creatorLabel += ' (' + t.created_by_name + ')';
+                        }
+                    }
+
+                    const status = t.status || 'approved';
+                    const statusBadgeMap = {
+                        approved: 'success',
+                        pending: 'warning',
+                        rejected: 'danger'
+                    };
+                    const statusBadge = `<span class="badge bg-${statusBadgeMap[status] || 'secondary'}">${status}</span>`;
+
                     html += `<tr>
                         <td>${t.tanggal}</td>
                         <td>${t.account_name}</td>
                         <td>${dirLabelMap[t.direction] || t.direction}</td>
+                        <td>${statusBadge}</td>
                         <td>${t.category || '-'}</td>
                         <td>${(t.reference_type || '-')}${t.reference_id ? (' #' + t.reference_id) : ''}</td>
+                        <td>${creatorLabel}</td>
                         <td>${t.note || '-'}</td>
                         <td class="text-end ${cls}">${sign}${fmt(t.amount)}</td>
                     </tr>`;
                 });
             }
             $('#txTableBody').html(html);
+        }
+    });
+}
+
+function loadPendingApprovals() {
+    if (!isOwner) return;
+    $.getJSON('backend.php?action=read_pending_transactions', function(res) {
+        if (!res.success) {
+            $('#approvalTableBody').html('<tr><td colspan="9" class="text-center text-danger">Gagal memuat approval pending</td></tr>');
+            return;
+        }
+
+        let html = '';
+        if (!res.data.length) {
+            html = '<tr><td colspan="9" class="text-center text-muted">Tidak ada transaksi pending</td></tr>';
+        } else {
+            const dirLabelMap = {
+                in: 'Masuk',
+                out: 'Keluar',
+                transfer_in: 'Transfer Masuk',
+                transfer_out: 'Transfer Keluar'
+            };
+
+            res.data.forEach(function(t) {
+                const out = (t.direction === 'out' || t.direction === 'transfer_out');
+                const cls = out ? 'text-danger' : 'text-success';
+                const sign = out ? '-' : '+';
+                const creator = t.created_by_name ? t.created_by_name : ('User #' + (t.created_by || '-'));
+
+                html += `<tr>
+                    <td>${t.tanggal}</td>
+                    <td>${t.account_name || '-'}</td>
+                    <td>${dirLabelMap[t.direction] || t.direction}</td>
+                    <td>${t.category || '-'}</td>
+                    <td>${(t.reference_type || '-')}${t.reference_id ? (' #' + t.reference_id) : ''}</td>
+                    <td>${creator}</td>
+                    <td>${t.note || '-'}</td>
+                    <td class="text-end ${cls}">${sign}${fmt(t.amount)}</td>
+                    <td>
+                        <button class="btn btn-success btn-sm me-1" onclick="approveTransaction(${t.id})">Approve</button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="rejectTransaction(${t.id})">Reject</button>
+                    </td>
+                </tr>`;
+            });
+        }
+
+        $('#approvalTableBody').html(html);
+    });
+}
+
+function approveTransaction(id) {
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        dataType: 'json',
+        data: { action: 'approve_transaction', id: id },
+        success: function(res) {
+            if (res.success) {
+                showAlert('success', res.message);
+                loadPendingApprovals();
+                loadSummary();
+                loadAccounts();
+                loadTransactions();
+            } else {
+                showAlert('danger', res.message || 'Gagal approve transaksi');
+            }
+        }
+    });
+}
+
+function rejectTransaction(id) {
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        dataType: 'json',
+        data: { action: 'reject_transaction', id: id },
+        success: function(res) {
+            if (res.success) {
+                showAlert('success', res.message);
+                loadPendingApprovals();
+                loadTransactions();
+            } else {
+                showAlert('danger', res.message || 'Gagal reject transaksi');
+            }
         }
     });
 }

@@ -21,11 +21,11 @@ include '../header.php';
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">Data Invoice & Piutang</h5>
-                    <?php if ($is_owner): ?>
+                    
                     <button class="btn btn-primary btn-sm" onclick="autoCreateInvoices()" id="btnAutoCreateInvoice">
                         <i class="fas fa-magic"></i> Refresh Invoice
                     </button>
-                    <?php endif; ?>
+                    
                 </div>
                 <div class="card-body">
                     <div class="row mb-3">
@@ -49,6 +49,7 @@ include '../header.php';
                                     <th>SPK</th>
                                     <th>Customer</th>
                                     <th>Kendaraan</th>
+                                    <th>Dibuat Oleh</th>
                                     <th>Terbayar</th>
                                     <th>Sisa</th>
                                     <th>Status</th>
@@ -57,7 +58,7 @@ include '../header.php';
                             </thead>
                             <tbody id="invoiceTableBody">
                                 <tr>
-                                    <td colspan="8" class="text-center">Loading...</td>
+                                    <td colspan="9" class="text-center">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -84,7 +85,6 @@ include '../header.php';
 </div>
 
 <!-- Modal Input Pembayaran -->
-<?php if ($is_owner): ?>
 <div class="modal fade" id="paymentModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -140,7 +140,6 @@ include '../header.php';
         </div>
     </div>
 </div>
-<?php endif; ?>
 
 <!-- Modal Edit Pembayaran -->
 <div class="modal fade" id="editPaymentModal" tabindex="-1">
@@ -242,7 +241,7 @@ function displayInvoices(invoices) {
     let html = '';
     
     if (invoices.length === 0) {
-        html = '<tr><td colspan="8" class="text-center">Belum ada data invoice</td></tr>';
+        html = '<tr><td colspan="9" class="text-center">Belum ada data invoice</td></tr>';
     } else {
         invoices.forEach(function(inv) {
             let statusBadge = '';
@@ -254,12 +253,17 @@ function displayInvoices(invoices) {
                 statusBadge = '<span class="badge bg-danger">Belum Bayar</span>';
             }
             
+            const creatorRole = inv.invoice_created_by_role || '-';
+            const creatorName = inv.invoice_created_by_name || '-';
+            const creatorText = (inv.user_id ? ('User #' + inv.user_id) : '-') + '<br><small class="text-muted">' + creatorRole + ' (' + creatorName + ')</small>';
+
             html += `
                 <tr>
                     <td>${inv.id}</td>
                     <td><small>${inv.spk_code}</small></td>
                     <td>${inv.customer_name}<br><small class="text-muted">${inv.customer_phone}</small></td>
                     <td><small>${inv.nomor_polisi}<br>${inv.merk} ${inv.model}</small></td>
+                    <td>${creatorText}</td>
                     <td class="text-success">Rp ${formatNumber(inv.total_paid)}</td>
                     <td class="text-danger">Rp ${formatNumber(inv.sisa_piutang)}</td>
                     <td>${statusBadge}</td>
@@ -307,7 +311,7 @@ function autoCreateInvoices() {
             showAlert('danger', 'Error: ' + error);
         },
         complete: function() {
-            $('#btnAutoCreateInvoice').prop('disabled', false).html('<i class="fas fa-magic"></i> Buat Invoice Otomatis');
+            $('#btnAutoCreateInvoice').prop('disabled', false).html('<i class="fas fa-magic"></i> Refresh Invoice');
         }
     });
 }
@@ -374,6 +378,11 @@ function displayInvoiceDetail(inv) {
             }
             const methodLabel = pay.method === 'cash' ? 'Cash / Tunai' : 'Rekening / Transfer';
             
+            const approvalStatus = pay.approval_status || 'approved';
+            const statusBadge = (approvalStatus === 'approved')
+                ? '<span class="badge bg-success">Approved</span>'
+                : `<span class="badge bg-secondary">${approvalStatus}</span>`;
+
             paymentsHtml += `
                 <tr>
                     <td>${formatDateTime(pay.tanggal)}</td>
@@ -382,9 +391,16 @@ function displayInvoiceDetail(inv) {
                     <td>${pay.note || '-'}</td>
                     <td>${updatedAtDisplay}</td>
                     <td>
+                        ${statusBadge}
+                        <div class="mt-1"></div>
                         ${(isOwner || userRole === 'Admin') ? `
                         <button class="btn btn-warning btn-sm" onclick="editPayment(${pay.id}, ${inv.id})" title="Edit">
                             <i class="fas fa-edit"></i>
+                        </button>
+                        ` : ''}
+                        ${(isOwner || userRole === 'Admin') ? `
+                        <button class="btn btn-danger btn-sm" onclick="deletePayment(${pay.id}, ${inv.id})" title="Hapus">
+                            <i class="fas fa-trash"></i>
                         </button>
                         ` : ''}
                     </td>
@@ -408,6 +424,7 @@ function displayInvoiceDetail(inv) {
                 <strong>Kendaraan:</strong> ${inv.nomor_polisi}<br>
                 <strong>Merk/Model:</strong> ${inv.merk} ${inv.model} (${inv.tahun})<br>
                 <strong>Keluhan:</strong> ${inv.keluhan_customer}<br>
+                <strong>Dibuat Oleh:</strong> ${inv.user_id ? ('User #' + inv.user_id) : '-'} (${inv.invoice_created_by_role || '-'} / ${inv.invoice_created_by_name || '-'})<br>
                 <strong>Status:</strong> <span class="badge bg-${statusBadge}">${inv.status_piutang}</span><br>
                 ${inv.paid_at ? '<strong>Lunas pada:</strong> ' + formatDate(inv.paid_at) : ''}
             </div>

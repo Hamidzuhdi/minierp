@@ -60,6 +60,7 @@ $is_owner = ($user_role === 'Owner');
                                 <option value="Dikirim ke Owner">Dikirim ke Owner</option>
                                 <option value="Buat Invoice">Buat Invoice</option>
                                 <option value="Sudah Cetak Invoice">Sudah Cetak Invoice</option>
+                                <option value="Dibatalkan">Dibatalkan</option>
                             </select>
                         </div>
                     </div>
@@ -266,10 +267,18 @@ $is_owner = ($user_role === 'Owner');
                                     </tr>
                                 </tfoot>
                             </table>
+
+                            <div class="alert alert-primary d-flex justify-content-between align-items-center mt-3 mb-0">
+                                <strong>Estimasi Biaya (Jasa + Sparepart)</strong>
+                                <h5 class="mb-0" id="estimasiBiayaTotal">Rp 0</h5>
+                            </div>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
+                    <div class="me-auto fw-semibold text-primary">
+                        Total Estimasi: <span id="estimasiBiayaTotalFooter">Rp 0</span>
+                    </div>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
                     <button type="submit" class="btn btn-primary">Simpan Analisa</button>
                 </div>
@@ -439,6 +448,11 @@ function displaySPKs(spks) {
                         <button class="btn btn-warning btn-sm" onclick="openAnalisaModal(${spk.id})" title="Analisa Mekanik">
                             <i class="fas fa-wrench"></i>
                         </button>
+                        ${spk.status_spk === 'Menunggu Konfirmasi' ? `
+                        <button class="btn btn-outline-danger btn-sm" onclick="downloadEstimasiPDF(${spk.id})" title="Download Estimasi PDF">
+                            <i class="fas fa-file-pdf"></i>
+                        </button>
+                        ` : ''}
                         ${isOwner && spk.status_spk === 'Dikirim ke Owner' ? `
                         <button class="btn btn-success btn-sm" onclick="createInvoiceFromSPK(${spk.id})" title="Buat Invoice & Cetak PDF">
                             <i class="fas fa-file-invoice"></i> Buat Invoice
@@ -457,7 +471,7 @@ function displaySPKs(spks) {
                                 ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Buat Invoice')">Buat Invoice</a></li>` : ''}
                                 ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Sudah Cetak Invoice')">Sudah Cetak Invoice</a></li>` : ''}
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="deleteSPK(${spk.id})">Hapus SPK</a></li>
+                                <li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dibatalkan')">Dibatalkan</a></li>
                             </ul>
                         </div>
                     </td>
@@ -492,7 +506,8 @@ function getStatusBadge(status) {
         'Selesai': 'success',
         'Dikirim ke Owner': 'secondary',
         'Buat Invoice': 'danger',
-        'Sudah Cetak Invoice': 'dark'
+        'Sudah Cetak Invoice': 'dark',
+        'Dibatalkan': 'danger'
     };
     return `<span class="badge bg-${badges[status] || 'secondary'}">${status}</span>`;
 }
@@ -672,6 +687,9 @@ function openAnalisaModal(id) {
         success: function(response) {
             if (response.success) {
                 let spk = response.data;
+                currentServiceTotal = 0;
+                currentSparepartTotal = 0;
+                refreshEstimasiBiaya();
                 $('#analisa_spk_id').val(spk.id);
                 $('#analisa_mekanik').val(spk.analisa_mekanik || '');
                 $('#service_description').val(spk.service_description || '');
@@ -744,6 +762,10 @@ function downloadInvoicePDF(spkId) {
     window.open('generate_invoice_pdf.php?spk_id=' + spkId, '_blank');
 }
 
+function downloadEstimasiPDF(spkId) {
+    window.open('generate_estimasi_pdf.php?spk_id=' + spkId, '_blank');
+}
+
 // Cetak Invoice PDF + Update status ke "Sudah Cetak Invoice"
 function createInvoiceFromSPK(spkId) {
     if (!confirm('Cetak Invoice PDF dan tandai SPK ini sebagai "Sudah Cetak Invoice"?')) {
@@ -779,25 +801,6 @@ function createInvoiceFromSPK(spkId) {
     });
 }
 
-function deleteSPK(id) {
-    if (confirm('Yakin ingin menghapus SPK ini?')) {
-        $.ajax({
-            url: 'backend.php',
-            type: 'POST',
-            data: { action: 'delete', id: id },
-            dataType: 'json',
-            success: function(response) {
-                if (response.success) {
-                    showAlert('success', response.message);
-                    loadSPKs();
-                } else {
-                    showAlert('danger', response.message);
-                }
-            }
-        });
-    }
-}
-
 function formatNumber(num) {
     return parseFloat(num).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2});
 }
@@ -823,6 +826,15 @@ function showAlert(type, message) {
 
 // ========== Service Management Functions ==========
 let servicePricesCache = [];
+let currentServiceTotal = 0;
+let currentSparepartTotal = 0;
+
+function refreshEstimasiBiaya() {
+    const total = currentServiceTotal + currentSparepartTotal;
+    const label = 'Rp ' + formatNumber(total);
+    $('#estimasiBiayaTotal').text(label);
+    $('#estimasiBiayaTotalFooter').text(label);
+}
 
 function loadServicePrices() {
     $.ajax({
@@ -901,8 +913,10 @@ function displayServicesList(services) {
         html = '<tr><td colspan="5" class="text-center text-muted">Belum ada jasa</td></tr>';
     }
     
+    currentServiceTotal = total;
     $('#serviceListTable').html(html);
     $('#totalServiceCost').html('Rp ' + formatNumber(total));
+    refreshEstimasiBiaya();
 }
 
 function addServiceToSPK() {
@@ -1046,8 +1060,10 @@ function displaySparepartsList(spareparts) {
         html = '<tr><td colspan="5" class="text-center text-muted">Belum ada sparepart</td></tr>';
     }
     
+    currentSparepartTotal = total;
     $('#sparepartListTable').html(html);
     $('#totalSparepartCost').html('Rp ' + formatNumber(total));
+    refreshEstimasiBiaya();
 }
 
 function addSparepartToSPK() {

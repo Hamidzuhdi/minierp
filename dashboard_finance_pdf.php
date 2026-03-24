@@ -96,6 +96,7 @@ function category_label($code, $expenseName)
     $labels = [
         'OUT-PO' => 'Pengeluaran PO',
         'IN-CUST-SPAREPART' => 'Pemasukan SPK Sparepart',
+        'IN-CUST-PAYMENT' => 'Pembayaran Invoice Customer',
         'TRF-IN' => 'Transfer Masuk',
         'TRF-OUT' => 'Transfer Keluar',
     ];
