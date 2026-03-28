@@ -20,6 +20,33 @@ $qOut = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHER
 $qPo = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'out' AND ft.category = 'OUT-PO' $month_filter";
 $qOps = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'out' AND ft.reference_type = 'operational' $month_filter";
 $qSpk = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'in' AND ft.reference_type = 'invoice' $month_filter";
+$qSalesDiscount = "SELECT COALESCE(SUM(ft.amount), 0) total
+                                    FROM finance_transactions ft
+                                    LEFT JOIN expense_categories ec ON ec.code = ft.category
+                                    WHERE ft.direction = 'out'
+                                        AND ft.reference_type = 'operational'
+                                        AND (
+                                                UPPER(ft.category) = 'SALES-DISCOUNT'
+                                                OR UPPER(ft.category) = 'EXP-SALES-DISCOUNT'
+                                                OR LOWER(COALESCE(ec.name, '')) = 'sales discount'
+                                        )
+                                        $month_filter";
+$qFixedExpense = "SELECT COALESCE(SUM(ft.amount), 0) total
+                                    FROM finance_transactions ft
+                                    JOIN expense_categories ec ON ec.code = ft.category
+                                    WHERE ft.direction = 'out'
+                                        AND ft.reference_type = 'operational'
+                                        AND ec.is_active = 1
+                                        AND ec.status = 1
+                                        $month_filter";
+$qVariableExpense = "SELECT COALESCE(SUM(ft.amount), 0) total
+                                         FROM finance_transactions ft
+                                         JOIN expense_categories ec ON ec.code = ft.category
+                                         WHERE ft.direction = 'out'
+                                             AND ft.reference_type = 'operational'
+                                             AND ec.is_active = 1
+                                             AND ec.status = 0
+                                             $month_filter";
 
 $total_in = (float)mysqli_fetch_assoc(mysqli_query($conn, $qIn))['total'];
 $total_out = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOut))['total'];
@@ -27,6 +54,9 @@ $po_out = (float)mysqli_fetch_assoc(mysqli_query($conn, $qPo))['total'];
 $ops_out = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOps))['total'];
 $spk_in = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpk))['total'];
 $net = $total_in - $total_out;
+$sales_discount = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSalesDiscount))['total'];
+$fixed_expense_total = (float)mysqli_fetch_assoc(mysqli_query($conn, $qFixedExpense))['total'];
+$variable_expense_total = (float)mysqli_fetch_assoc(mysqli_query($conn, $qVariableExpense))['total'];
 
 $has_hpp_col_res = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'hpp_satuan'");
 $has_hpp_col = $has_hpp_col_res && mysqli_num_rows($has_hpp_col_res) > 0;
@@ -58,8 +88,10 @@ $spare_revenue = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareRevenue))[
 $service_revenue = (float)mysqli_fetch_assoc(mysqli_query($conn, $qServiceRevenue))['total'];
 $spare_hpp = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareHpp))['total'];
 $spare_profit = $spare_revenue - $spare_hpp;
-$laba_kotor = ($service_revenue + $spare_revenue) - $spare_hpp;
-$laba_bersih = $laba_kotor - $ops_out;
+$laba_kotor_formula = $total_in - ($sales_discount + $spare_hpp);
+$total_beban_operasional = $fixed_expense_total + $variable_expense_total;
+$zakat = $laba_kotor_formula > 0 ? ($laba_kotor_formula * 0.025) : 0;
+$gross_profit = $laba_kotor_formula - ($total_beban_operasional + $zakat);
 
 $cashAcc = finance_get_account_by_code($conn, 'cash');
 $bankAcc = finance_get_account_by_code($conn, 'bank');
@@ -76,20 +108,6 @@ $top_categories = [];
 $resTopOps = mysqli_query($conn, $qTopOps);
 while ($row = mysqli_fetch_assoc($resTopOps)) {
     $top_categories[] = $row;
-}
-
-$qRecent = "SELECT ft.tanggal, ft.direction, ft.category, ft.reference_type, ft.reference_id, ft.note, ft.amount,
-                   fa.name as account_name, COALESCE(ec.name, '') as expense_category_name
-            FROM finance_transactions ft
-            JOIN finance_accounts fa ON ft.account_id = fa.id
-            LEFT JOIN expense_categories ec ON ft.category = ec.code
-            WHERE 1=1 $month_filter
-            ORDER BY ft.id DESC
-            LIMIT 40";
-$recent = [];
-$resRecent = mysqli_query($conn, $qRecent);
-while ($row = mysqli_fetch_assoc($resRecent)) {
-    $recent[] = $row;
 }
 
 function rupiah($value)
@@ -125,6 +143,7 @@ h2 { margin: 0 0 6px 0; color: #0b5ed7; }
 .summary-row:last-child { border-bottom: 0; }
 .summary-title { color: #666; font-size: 9pt; }
 .summary-value { font-size: 11pt; font-weight: bold; float: right; }
+.summary-detail { color: #555; font-size: 8.5pt; font-style: italic; }
 .section-title { margin-top: 14px; font-size: 11pt; font-weight: bold; color: #333; }
 table { width: 100%; border-collapse: collapse; margin-top: 6px; }
 th, td { border: 1px solid #ddd; padding: 6px; }
@@ -141,18 +160,23 @@ th { background: #f5f5f5; text-align: left; }
 <div class="small">Generated at: ' . $generated_at . '</div>
 
 <div class="summary-list">
-    <div class="summary-row"><span class="summary-title">Cashflow Masuk</span><span class="summary-value">' . rupiah($total_in) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Cashflow Keluar</span><span class="summary-value">' . rupiah($total_out) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Net Cashflow</span><span class="summary-value">' . rupiah($net) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Pengeluaran PO</span><span class="summary-value">' . rupiah($po_out) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Biaya Operasional</span><span class="summary-value">' . rupiah($ops_out) . '</span></div>
+    <div class="summary-row"><span class="summary-title">1. Cashflow Masuk</span><span class="summary-value">' . rupiah($total_in) . '</span></div>
+    <div class="summary-row"><span class="summary-title">2. Kategori Pengeluaran (Sales Discount)</span><span class="summary-value">' . rupiah($sales_discount) . '</span></div>
+    <div class="summary-row"><span class="summary-title">3. Biaya HPP Sparepart</span><span class="summary-value">' . rupiah($spare_hpp) . '</span></div>
+    <div class="summary-row"><span class="summary-title">4. Laba Kotor [1 - (2 + 3)]</span><span class="summary-value">' . rupiah($laba_kotor_formula) . '</span></div>
+    <div class="summary-row"><span class="summary-detail">Detail #4: ' . rupiah($total_in) . ' - (' . rupiah($sales_discount) . ' + ' . rupiah($spare_hpp) . ') = ' . rupiah($laba_kotor_formula) . '</span></div>
+    <div class="summary-row"><span class="summary-title">5. Judul (Static): Beban Operasional</span><span class="summary-value">-</span></div>
+    <div class="summary-row"><span class="summary-title">6. Judul (Static): Beban Tetap</span><span class="summary-value">-</span></div>
+    <div class="summary-row"><span class="summary-title">7. Semua expense_categories status = 1</span><span class="summary-value">' . rupiah($fixed_expense_total) . '</span></div>
+    <div class="summary-row"><span class="summary-title">8. Judul (Static): Beban Tidak Tetap</span><span class="summary-value">-</span></div>
+    <div class="summary-row"><span class="summary-title">9. Semua expense_categories status = 0</span><span class="summary-value">' . rupiah($variable_expense_total) . '</span></div>
+    <div class="summary-row"><span class="summary-title">10. Total Beban Operasional [7 + 9]</span><span class="summary-value">' . rupiah($total_beban_operasional) . '</span></div>
+    <div class="summary-row"><span class="summary-detail">Detail #10: ' . rupiah($fixed_expense_total) . ' + ' . rupiah($variable_expense_total) . ' = ' . rupiah($total_beban_operasional) . '</span></div>
+    <div class="summary-row"><span class="summary-title">11. Zakat 2.5%</span><span class="summary-value">' . rupiah($zakat) . '</span></div>
+    <div class="summary-row"><span class="summary-detail">Detail #11: 2.5% x ' . rupiah($laba_kotor_formula) . ' = ' . rupiah($zakat) . '</span></div>
+    <div class="summary-row"><span class="summary-title">12. Gross Profit [4 - (10 + 11)]</span><span class="summary-value">' . rupiah($gross_profit) . '</span></div>
+    <div class="summary-row"><span class="summary-detail">Detail #12: ' . rupiah($laba_kotor_formula) . ' - (' . rupiah($total_beban_operasional) . ' + ' . rupiah($zakat) . ') = ' . rupiah($gross_profit) . '</span></div>
     <div class="summary-row"><span class="summary-title">Saldo Akhir (Cash + Bank)</span><span class="summary-value">' . rupiah($saldo_akhir) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Pendapatan Jasa (Lunas)</span><span class="summary-value">' . rupiah($service_revenue) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Pendapatan Sparepart (Lunas)</span><span class="summary-value">' . rupiah($spare_revenue) . '</span></div>
-    <div class="summary-row"><span class="summary-title">HPP Sparepart (Lunas)</span><span class="summary-value">' . rupiah($spare_hpp) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Profit Sparepart (Setelah HPP)</span><span class="summary-value">' . rupiah($spare_profit) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Laba Kotor (Jasa + Sparepart - HPP)</span><span class="summary-value">' . rupiah($laba_kotor) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Laba Bersih (Laba Kotor - Biaya Operasional)</span><span class="summary-value">' . rupiah($laba_bersih) . '</span></div>
 </div>
 
 <div class="section-title">Top Kategori Pengeluaran</div>
@@ -175,48 +199,6 @@ if (count($top_categories) === 0) {
             <td class="text-center">' . $no++ . '</td>
             <td>' . htmlspecialchars(category_label($row['category'], $row['category_name'])) . '</td>
             <td class="text-right">' . rupiah($row['total_out']) . '</td>
-        </tr>';
-    }
-}
-
-$html .= '
-    </tbody>
-</table>
-
-<div class="section-title">Transaksi Keuangan Terbaru</div>
-<table>
-    <thead>
-        <tr>
-            <th style="width:14%">Tanggal</th>
-            <th style="width:16%">Akun</th>
-            <th style="width:18%">Kategori</th>
-            <th style="width:16%">Ref</th>
-            <th style="width:10%">Arah</th>
-            <th style="width:26%">Catatan / Nominal</th>
-        </tr>
-    </thead>
-    <tbody>';
-
-if (count($recent) === 0) {
-    $html .= '<tr><td colspan="6" class="text-center">Belum ada data</td></tr>';
-} else {
-    foreach ($recent as $row) {
-        $direction = $row['direction'] === 'in' ? 'Masuk' : 'Keluar';
-        $directionClass = $row['direction'] === 'in' ? 'in' : 'out';
-        $ref = ($row['reference_type'] ?: '-') . (!empty($row['reference_id']) ? ('#' . $row['reference_id']) : '');
-        $note = trim((string)$row['note']);
-        $noteText = $note !== '' ? htmlspecialchars($note) : '-';
-
-        $html .= '<tr>
-            <td>' . htmlspecialchars($row['tanggal']) . '</td>
-            <td>' . htmlspecialchars($row['account_name']) . '</td>
-            <td>' . htmlspecialchars(category_label($row['category'], $row['expense_category_name'])) . '</td>
-            <td>' . htmlspecialchars($ref) . '</td>
-            <td class="text-center ' . $directionClass . '">' . $direction . '</td>
-            <td>
-                <div>' . $noteText . '</div>
-                <div class="text-right ' . $directionClass . '">' . rupiah($row['amount']) . '</div>
-            </td>
         </tr>';
     }
 }

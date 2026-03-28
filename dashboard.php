@@ -35,8 +35,13 @@ $spk_menunggu = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total
 $spk_pengerjaan = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spk WHERE status_spk = 'Dalam Pengerjaan'"))['total'];
 $spk_selesai = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spk WHERE status_spk IN ('Selesai', 'Dikirim ke owner')"))['total'];
 
-// Warehouse Stats
-$warehouse_pending = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM warehouse_out WHERE status = 'Pending'"))['total'];
+// Customer reminder 2 bulanan (SPK bukan dibatalkan)
+$customer_reminder_count_query = "SELECT COUNT(DISTINCT s.customer_id) as total
+                                                                    FROM spk s
+                                                                    WHERE s.customer_id IS NOT NULL
+                                                                        AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
+                                                                        AND DATE_ADD(DATE(s.created_at), INTERVAL 2 MONTH) <= CURDATE()";
+$customer_reminder_count = mysqli_fetch_assoc(mysqli_query($conn, $customer_reminder_count_query))['total'];
 $sparepart_low_stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spareparts WHERE current_stock <= min_stock"))['total'];
 
 // Purchase Stats
@@ -201,19 +206,22 @@ if ($is_owner) {
     <!-- Warehouse & Purchase Section -->
     <div class="row g-3 mb-4">
         <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Request Barang Keluar</h6>
-                            <h2 class="mb-0"><?php echo $warehouse_pending; ?></h2>
-                        </div>
-                        <div class="bg-primary bg-opacity-10 rounded p-3">
-                            <i class="fas fa-dolly fa-2x text-primary"></i>
+            <a href="customers/index.php?reminder=1" class="text-decoration-none text-reset d-block h-100">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted mb-2">Reminder Customer (2 Bulan)</h6>
+                                <h2 class="mb-0"><?php echo $customer_reminder_count; ?></h2>
+                                <small class="text-primary">Klik untuk lihat detail customer</small>
+                            </div>
+                            <div class="bg-primary bg-opacity-10 rounded p-3">
+                                <i class="fas fa-bell fa-2x text-primary"></i>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </a>
         </div>
         <div class="col-md-4">
             <div class="card border-0 shadow-sm h-100">
@@ -382,7 +390,7 @@ if ($is_owner) {
     
     <!-- Stat Cards -->
     <div class="row g-3 mb-4" id="financeCardsRow">
-        <div class="col-md-2 col-sm-4">
+        <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-primary text-white h-100">
                 <div class="card-body p-3">
                     <div class="small mb-1">Cashflow Masuk</div>
@@ -390,43 +398,91 @@ if ($is_owner) {
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-4">
-            <div class="card border-0 shadow-sm bg-info text-white h-100">
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm bg-danger text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Cashflow Keluar</div>
-                    <div class="fw-bold" id="fcTotalOut">-</div>
+                    <div class="small mb-1">Kategori Pengeluaran (Sales Discount)</div>
+                    <div class="fw-bold" id="fcSalesDiscount">-</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-4">
+        <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-warning text-dark h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Pengeluaran PO</div>
-                    <div class="fw-bold" id="fcPoOut">-</div>
+                    <div class="small mb-1">Biaya HPP Sparepart</div>
+                    <div class="fw-bold" id="fcSpareHpp">-</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-4">
+        <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-success text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Pemasukan SPK</div>
-                    <div class="fw-bold" id="fcSpkIn">-</div>
+                    <div class="small mb-1">Laba Kotor [1 - (2 + 3)]</div>
+                    <div class="fw-bold" id="fcLabaKotorFormula">-</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-4">
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm bg-light h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1 text-muted">Judul (Static)</div>
+                    <div class="fw-bold">Beban Operasional</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm bg-light h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1 text-muted">Judul (Static)</div>
+                    <div class="fw-bold">Beban Tetap</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-secondary text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Biaya Operasional</div>
-                    <div class="fw-bold" id="fcOpsOut">-</div>
+                    <div class="small mb-1">Semua expense_categories status = 1</div>
+                    <div class="fw-bold" id="fcFixedExpense">-</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-4">
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm bg-light h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1 text-muted">Judul (Static)</div>
+                    <div class="fw-bold">Beban Tidak Tetap</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm bg-secondary text-white h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Semua expense_categories status = 0</div>
+                    <div class="fw-bold" id="fcVariableExpense">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-dark text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Net Cashflow</div>
-                    <div class="fw-bold" id="fcNet">-</div>
+                    <div class="small mb-1">Total Beban Operasional [7 + 9]</div>
+                    <div class="fw-bold" id="fcTotalBebanOps">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm bg-info text-white h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Zakat 2.5%</div>
+                    <div class="fw-bold" id="fcZakat">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm bg-success text-white h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Gross Profit [4 - (10 + 11)]</div>
+                    <div class="fw-bold" id="fcGrossProfit">-</div>
                 </div>
             </div>
         </div>
@@ -536,11 +592,14 @@ if ($is_owner) {
                 
                 // Update cards
                 $('#fcTotalIn').text(fcFormat(res.summary.total_in));
-                $('#fcTotalOut').text(fcFormat(res.summary.total_out));
-                $('#fcPoOut').text(fcFormat(res.summary.po_out));
-                $('#fcSpkIn').text(fcFormat(res.summary.spk_in));
-                $('#fcOpsOut').text(fcFormat(res.summary.ops_out));
-                $('#fcNet').text(fcFormat(res.summary.net_cashflow));
+                $('#fcSalesDiscount').text(fcFormat(res.summary.sales_discount));
+                $('#fcSpareHpp').text(fcFormat(res.summary.spare_hpp));
+                $('#fcLabaKotorFormula').text(fcFormat(res.summary.laba_kotor_formula));
+                $('#fcFixedExpense').text(fcFormat(res.summary.fixed_expense_total));
+                $('#fcVariableExpense').text(fcFormat(res.summary.variable_expense_total));
+                $('#fcTotalBebanOps').text(fcFormat(res.summary.total_beban_operasional));
+                $('#fcZakat').text(fcFormat(res.summary.zakat));
+                $('#fcGrossProfit').text(fcFormat(res.summary.gross_profit));
                 
                 // Update chart
                 let labels = res.monthly.map(m => m.label);

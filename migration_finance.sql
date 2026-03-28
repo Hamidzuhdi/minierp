@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS expense_categories (
     code VARCHAR(30) NOT NULL UNIQUE,
     name VARCHAR(120) NOT NULL,
     description TEXT NULL,
+    status TINYINT(1) NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -76,14 +77,14 @@ INSERT INTO finance_accounts (code, name, opening_balance, current_balance, is_a
 SELECT 'bank', 'Rekening Bengkel', 12000000, 12000000, 1
 WHERE NOT EXISTS (SELECT 1 FROM finance_accounts WHERE code = 'bank');
 
-INSERT INTO expense_categories (code, name, description, is_active)
-SELECT 'EXP-LISTRIK', 'Biaya Listrik', 'Tagihan listrik operasional bengkel', 1
+INSERT INTO expense_categories (code, name, description, status, is_active)
+SELECT 'EXP-LISTRIK', 'Biaya Listrik', 'Tagihan listrik operasional bengkel', 0, 1
 WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-LISTRIK');
 
-INSERT INTO expense_categories (code, name, description, is_active)
-SELECT 'EXP-PDAM', 'Biaya PDAM', 'Tagihan air operasional bengkel', 1
+INSERT INTO expense_categories (code, name, description, status, is_active)
+SELECT 'EXP-PDAM', 'Biaya PDAM', 'Tagihan air operasional bengkel', 0, 1
 WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-PDAM');
 
-INSERT INTO expense_categories (code, name, description, is_active)
-SELECT 'EXP-ATK', 'ATK & Kertas Nota', 'Pembelian alat tulis kantor dan nota', 1
+INSERT INTO expense_categories (code, name, description, status, is_active)
+SELECT 'EXP-ATK', 'ATK & Kertas Nota', 'Pembelian alat tulis kantor dan nota', 0, 1
 WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-ATK');

@@ -23,11 +23,44 @@ $qPo = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE
 $qOps = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'out' AND ft.reference_type = 'operational' $month_filter";
 $qSpkIn = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'in' AND ft.reference_type = 'invoice' $month_filter";
 
+$qSalesDiscount = "SELECT COALESCE(SUM(ft.amount), 0) total
+                                    FROM finance_transactions ft
+                                    LEFT JOIN expense_categories ec ON ec.code = ft.category
+                                    WHERE ft.direction = 'out'
+                                        AND ft.reference_type = 'operational'
+                                        AND (
+                                                UPPER(ft.category) = 'SALES-DISCOUNT'
+                                                OR UPPER(ft.category) = 'EXP-SALES-DISCOUNT'
+                                                OR LOWER(COALESCE(ec.name, '')) = 'sales discount'
+                                        )
+                                        $month_filter";
+
+$qFixedExpense = "SELECT COALESCE(SUM(ft.amount), 0) total
+                                    FROM finance_transactions ft
+                                    JOIN expense_categories ec ON ec.code = ft.category
+                                    WHERE ft.direction = 'out'
+                                        AND ft.reference_type = 'operational'
+                                        AND ec.is_active = 1
+                                        AND ec.status = 1
+                                        $month_filter";
+
+$qVariableExpense = "SELECT COALESCE(SUM(ft.amount), 0) total
+                                         FROM finance_transactions ft
+                                         JOIN expense_categories ec ON ec.code = ft.category
+                                         WHERE ft.direction = 'out'
+                                             AND ft.reference_type = 'operational'
+                                             AND ec.is_active = 1
+                                             AND ec.status = 0
+                                             $month_filter";
+
 $total_in = (float)mysqli_fetch_assoc(mysqli_query($conn, $qIn))['total'];
 $total_out = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOut))['total'];
 $po_out = (float)mysqli_fetch_assoc(mysqli_query($conn, $qPo))['total'];
 $ops_out = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOps))['total'];
 $spk_in = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpkIn))['total'];
+$sales_discount = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSalesDiscount))['total'];
+$fixed_expense_total = (float)mysqli_fetch_assoc(mysqli_query($conn, $qFixedExpense))['total'];
+$variable_expense_total = (float)mysqli_fetch_assoc(mysqli_query($conn, $qVariableExpense))['total'];
 
 // Sparepart realized profit (invoice Lunas) using snapshot selling price and HPP.
 $has_hpp_col_res = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'hpp_satuan'");
@@ -55,6 +88,11 @@ if ($has_hpp_col) {
 $spare_revenue = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareRevenue))['total'];
 $spare_hpp = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareHpp))['total'];
 $spare_profit = $spare_revenue - $spare_hpp;
+
+$laba_kotor_formula = $total_in - ($sales_discount + $spare_hpp);
+$total_beban_operasional = $fixed_expense_total + $variable_expense_total;
+$zakat = $laba_kotor_formula > 0 ? ($laba_kotor_formula * 0.025) : 0;
+$gross_profit = $laba_kotor_formula - ($total_beban_operasional + $zakat);
 
 $cashAcc = finance_get_account_by_code($conn, 'cash');
 $bankAcc = finance_get_account_by_code($conn, 'bank');
@@ -103,6 +141,38 @@ while ($row = mysqli_fetch_assoc($resTopOps)) {
     $top_categories[] = $row;
 }
 
+$qFixedBreakdown = "SELECT ec.code as category, ec.name as category_name, SUM(ft.amount) total_out
+                                        FROM finance_transactions ft
+                                        JOIN expense_categories ec ON ec.code = ft.category
+                                        WHERE ft.direction = 'out'
+                                            AND ft.reference_type = 'operational'
+                                            AND ec.is_active = 1
+                                            AND ec.status = 1
+                                            $month_filter
+                                        GROUP BY ec.code, ec.name
+                                        ORDER BY total_out DESC";
+$fixed_categories = [];
+$resFixedBreakdown = mysqli_query($conn, $qFixedBreakdown);
+while ($row = mysqli_fetch_assoc($resFixedBreakdown)) {
+        $fixed_categories[] = $row;
+}
+
+$qVariableBreakdown = "SELECT ec.code as category, ec.name as category_name, SUM(ft.amount) total_out
+                                             FROM finance_transactions ft
+                                             JOIN expense_categories ec ON ec.code = ft.category
+                                             WHERE ft.direction = 'out'
+                                                 AND ft.reference_type = 'operational'
+                                                 AND ec.is_active = 1
+                                                 AND ec.status = 0
+                                                 $month_filter
+                                             GROUP BY ec.code, ec.name
+                                             ORDER BY total_out DESC";
+$variable_categories = [];
+$resVariableBreakdown = mysqli_query($conn, $qVariableBreakdown);
+while ($row = mysqli_fetch_assoc($resVariableBreakdown)) {
+        $variable_categories[] = $row;
+}
+
 // Recent ledger transactions
 $qRecent = "SELECT ft.tanggal, ft.direction, ft.category, ft.reference_type, ft.reference_id, ft.note, ft.amount,
                    fa.name as account_name, COALESCE(ec.name, '') as expense_category_name
@@ -129,11 +199,20 @@ echo json_encode([
         'spare_revenue' => $spare_revenue,
         'spare_hpp' => $spare_hpp,
         'spare_profit' => $spare_profit,
+        'sales_discount' => $sales_discount,
+        'laba_kotor_formula' => $laba_kotor_formula,
+        'fixed_expense_total' => $fixed_expense_total,
+        'variable_expense_total' => $variable_expense_total,
+        'total_beban_operasional' => $total_beban_operasional,
+        'zakat' => $zakat,
+        'gross_profit' => $gross_profit,
         'net_cashflow' => $total_in - $total_out,
         'saldo_akhir' => $saldo_akhir,
     ],
     'monthly' => array_values($chart_months),
     'top_categories' => $top_categories,
+    'fixed_categories' => $fixed_categories,
+    'variable_categories' => $variable_categories,
     'recent' => $recent,
 ]);
 ?>

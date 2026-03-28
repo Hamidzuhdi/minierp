@@ -83,12 +83,28 @@ if ($action === 'create') {
 // READ - Ambil Semua Customer
 elseif ($action === 'read') {
     $search = $_GET['search'] ?? '';
+    $reminder = $_GET['reminder'] ?? '0';
     
     $sql = "SELECT c.id, c.name, c.phone, c.address, c.created_at FROM customers c";
+    $conditions = [];
     
     if (!empty($search)) {
         $search = mysqli_real_escape_string($conn, $search);
-        $sql .= " WHERE c.name LIKE '%$search%' OR c.phone LIKE '%$search%'";
+        $conditions[] = "(c.name LIKE '%$search%' OR c.phone LIKE '%$search%')";
+    }
+
+    if ($reminder === '1') {
+        $conditions[] = "EXISTS (
+            SELECT 1
+            FROM spk s
+            WHERE s.customer_id = c.id
+              AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
+              AND DATE_ADD(DATE(s.created_at), INTERVAL 2 MONTH) <= CURDATE()
+        )";
+    }
+
+    if (count($conditions) > 0) {
+        $sql .= " WHERE " . implode(' AND ', $conditions);
     }
     
     $sql .= " ORDER BY c.id DESC";

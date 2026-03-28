@@ -29,9 +29,10 @@ if ($action === 'get_accounts') {
 }
 
 elseif ($action === 'get_expense_categories') {
-    $res = mysqli_query($conn, "SELECT id, code, name, description, is_active FROM expense_categories WHERE is_active = 1 ORDER BY name ASC");
+    $res = mysqli_query($conn, "SELECT id, code, name, description, status, is_active FROM expense_categories WHERE is_active = 1 ORDER BY name ASC");
     $rows = [];
     while ($r = mysqli_fetch_assoc($res)) {
+        $r['status'] = (int)($r['status'] ?? 0);
         $rows[] = $r;
     }
     echo json_encode(['success' => true, 'data' => $rows]);
@@ -61,14 +62,17 @@ elseif ($action === 'create_expense_category') {
     $code = strtoupper(trim($_POST['code'] ?? ''));
     $name = trim($_POST['name'] ?? '');
     $description = trim($_POST['description'] ?? '');
+    $status = (int)($_POST['status'] ?? 0);
+    $status = ($status === 1) ? 1 : 0;
     if ($code === '' || $name === '') {
         echo json_encode(['success' => false, 'message' => 'Kode dan nama kategori wajib diisi']);
         exit;
     }
-    $sql = "INSERT INTO expense_categories (code, name, description, is_active)
+    $sql = "INSERT INTO expense_categories (code, name, description, status, is_active)
             VALUES ('" . mysqli_real_escape_string($conn, $code) . "',
                     '" . mysqli_real_escape_string($conn, $name) . "',
-                    '" . mysqli_real_escape_string($conn, $description) . "', 1)";
+                    '" . mysqli_real_escape_string($conn, $description) . "',
+                    $status, 1)";
     if (mysqli_query($conn, $sql)) {
         echo json_encode(['success' => true, 'message' => 'Kategori pengeluaran berhasil ditambahkan']);
     } else {
@@ -85,6 +89,8 @@ elseif ($action === 'update_expense_category') {
     $code = strtoupper(trim($_POST['code'] ?? ''));
     $name = trim($_POST['name'] ?? '');
     $description = trim($_POST['description'] ?? '');
+    $status = (int)($_POST['status'] ?? 0);
+    $status = ($status === 1) ? 1 : 0;
     if ($id <= 0 || $code === '' || $name === '') {
         echo json_encode(['success' => false, 'message' => 'Data kategori tidak valid']);
         exit;
@@ -92,7 +98,8 @@ elseif ($action === 'update_expense_category') {
     $sql = "UPDATE expense_categories
             SET code = '" . mysqli_real_escape_string($conn, $code) . "',
                 name = '" . mysqli_real_escape_string($conn, $name) . "',
-                description = '" . mysqli_real_escape_string($conn, $description) . "'
+                description = '" . mysqli_real_escape_string($conn, $description) . "',
+                status = $status
             WHERE id = $id";
     if (mysqli_query($conn, $sql)) {
         echo json_encode(['success' => true, 'message' => 'Kategori pengeluaran berhasil diupdate']);
@@ -116,6 +123,29 @@ elseif ($action === 'delete_expense_category') {
         echo json_encode(['success' => true, 'message' => 'Kategori pengeluaran berhasil dihapus']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal menghapus kategori']);
+    }
+}
+
+elseif ($action === 'toggle_expense_category_status') {
+    if ($userRole !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa mengubah tipe kategori']);
+        exit;
+    }
+
+    $id = (int)($_POST['id'] ?? 0);
+    $status = (int)($_POST['status'] ?? 0);
+    $status = ($status === 1) ? 1 : 0;
+
+    if ($id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID kategori tidak valid']);
+        exit;
+    }
+
+    $sql = "UPDATE expense_categories SET status = $status WHERE id = $id AND is_active = 1";
+    if (mysqli_query($conn, $sql)) {
+        echo json_encode(['success' => true, 'message' => 'Status kategori berhasil diupdate']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal update status kategori: ' . mysqli_error($conn)]);
     }
 }
 

@@ -10,6 +10,8 @@ if (!isset($_SESSION['user_id'])) {
 
 $page_title = "Manajemen Customer";
 include '../header.php';
+
+$reminder_from_query = (($_GET['reminder'] ?? '') === '1') ? '1' : '0';
 ?>
 
 <div class="container-fluid py-4">
@@ -23,8 +25,16 @@ include '../header.php';
                     </button>
                 </div>
                 <div class="card-body">
-                    <div class="mb-3">
-                        <input type="text" class="form-control" id="searchInput" placeholder="Cari nama atau telepon...">
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-8">
+                            <input type="text" class="form-control" id="searchInput" placeholder="Cari nama atau telepon...">
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select" id="reminderFilter">
+                                <option value="0">Semua Customer</option>
+                                <option value="1">Reminder Customer (>= 2 Bulan)</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover" id="customerTable">
@@ -198,8 +208,14 @@ include '../header.php';
 <?php include '../footer.php'; ?>
 
 <script>
+const reminderFromQuery = '<?php echo $reminder_from_query; ?>';
+
 // Load data saat halaman dimuat
 $(document).ready(function() {
+    if (reminderFromQuery === '1') {
+        $('#reminderFilter').val('1');
+    }
+
     loadCustomers();
     
     // Search dengan delay
@@ -210,14 +226,19 @@ $(document).ready(function() {
             loadCustomers();
         }, 500);
     });
+
+    $('#reminderFilter').on('change', function() {
+        loadCustomers();
+    });
 });
 
 // Load semua customer
 function loadCustomers() {
     let search = $('#searchInput').val();
+    let reminder = $('#reminderFilter').val() || '0';
     
     $.ajax({
-        url: 'backend.php?action=read&search=' + encodeURIComponent(search),
+        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&reminder=' + encodeURIComponent(reminder),
         type: 'GET',
         dataType: 'json',
         success: function(response) {

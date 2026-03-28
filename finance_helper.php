@@ -96,11 +96,17 @@ function finance_ensure_default_accounts(mysqli $conn): void
             code VARCHAR(30) NOT NULL UNIQUE,
             name VARCHAR(120) NOT NULL,
             description TEXT NULL,
+            status TINYINT(1) NOT NULL DEFAULT 0,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB
     ");
+
+    $expenseStatusCol = mysqli_query($conn, "SHOW COLUMNS FROM expense_categories LIKE 'status'");
+    if ($expenseStatusCol && mysqli_num_rows($expenseStatusCol) === 0) {
+        mysqli_query($conn, "ALTER TABLE expense_categories ADD COLUMN status TINYINT(1) NOT NULL DEFAULT 0 AFTER description");
+    }
 
     $colCheck = mysqli_query($conn, "SHOW COLUMNS FROM operational_expenses LIKE 'category_code'");
     if ($colCheck && mysqli_num_rows($colCheck) === 0) {
@@ -152,20 +158,20 @@ function finance_ensure_default_accounts(mysqli $conn): void
     ");
 
     mysqli_query($conn, "
-        INSERT INTO expense_categories (code, name, description, is_active)
-        SELECT 'EXP-LISTRIK', 'Biaya Listrik', 'Tagihan listrik operasional bengkel', 1
+        INSERT INTO expense_categories (code, name, description, status, is_active)
+        SELECT 'EXP-LISTRIK', 'Biaya Listrik', 'Tagihan listrik operasional bengkel', 0, 1
         WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-LISTRIK')
     ");
 
     mysqli_query($conn, "
-        INSERT INTO expense_categories (code, name, description, is_active)
-        SELECT 'EXP-PDAM', 'Biaya PDAM', 'Tagihan air operasional bengkel', 1
+        INSERT INTO expense_categories (code, name, description, status, is_active)
+        SELECT 'EXP-PDAM', 'Biaya PDAM', 'Tagihan air operasional bengkel', 0, 1
         WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-PDAM')
     ");
 
     mysqli_query($conn, "
-        INSERT INTO expense_categories (code, name, description, is_active)
-        SELECT 'EXP-ATK', 'ATK & Kertas Nota', 'Pembelian alat tulis kantor dan nota', 1
+        INSERT INTO expense_categories (code, name, description, status, is_active)
+        SELECT 'EXP-ATK', 'ATK & Kertas Nota', 'Pembelian alat tulis kantor dan nota', 0, 1
         WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-ATK')
     ");
 }

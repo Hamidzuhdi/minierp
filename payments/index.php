@@ -196,12 +196,19 @@ include '../header.php';
                                 <div class="col-12"><input type="text" class="form-control form-control-sm" id="cat_code" placeholder="Kode (contoh EXP-LAIN)" required></div>
                                 <div class="col-12"><input type="text" class="form-control form-control-sm" id="cat_name" placeholder="Nama kategori" required></div>
                                 <div class="col-12"><input type="text" class="form-control form-control-sm" id="cat_desc" placeholder="Deskripsi (opsional)"></div>
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="cat_status">
+                                        <label class="form-check-label" for="cat_status">Biaya Tetap</label>
+                                    </div>
+                                    <small class="text-muted">ON = Biaya Tetap (1), OFF = Biaya Tidak Tetap (0)</small>
+                                </div>
                                 <div class="col-12 d-grid"><button class="btn btn-sm btn-primary" type="submit">Simpan Kategori</button></div>
                             </form>
                             <div class="table-responsive">
                                 <table class="table table-sm table-bordered mb-0">
-                                    <thead class="table-light"><tr><th>Kode</th><th>Nama</th><th>Aksi</th></tr></thead>
-                                    <tbody id="catTableBody"><tr><td colspan="3" class="text-center text-muted">Loading...</td></tr></tbody>
+                                    <thead class="table-light"><tr><th>Kode</th><th>Nama</th><th>Tipe Beban</th><th>Aksi</th></tr></thead>
+                                    <tbody id="catTableBody"><tr><td colspan="4" class="text-center text-muted">Loading...</td></tr></tbody>
                                 </table>
                             </div>
                         </div>
@@ -307,7 +314,8 @@ $(document).ready(function(){
                 id: id,
                 code: $('#cat_code').val(),
                 name: $('#cat_name').val(),
-                description: $('#cat_desc').val()
+                description: $('#cat_desc').val(),
+                status: $('#cat_status').is(':checked') ? 1 : 0
             },
             success: function(res){
                 if (res.success) {
@@ -405,16 +413,23 @@ function loadExpenseCategories(){
         res.data.forEach(function(c){
             expenseCategoryMap[c.id] = c;
             opCat += `<option value="${c.code}">${c.code}</option>`;
+            const isFixed = parseInt(c.status, 10) === 1;
             catHtml += `<tr>
                 <td>${c.code}</td>
                 <td>${c.name}</td>
+                <td>
+                    <span class="badge ${isFixed ? 'bg-primary' : 'bg-secondary'}">${isFixed ? 'Beban Tetap' : 'Beban Tidak Tetap'}</span>
+                    ${isOwner ? `<div class="form-check form-switch mt-1 mb-0">
+                        <input class="form-check-input" type="checkbox" ${isFixed ? 'checked' : ''} onchange="toggleCategoryStatus(${c.id}, this.checked)">
+                    </div>` : ''}
+                </td>
                 <td>
                     ${isOwner ? `<button type="button" class="btn btn-warning btn-sm me-1" onclick="editCategory(${c.id})"><i class="fas fa-edit"></i></button>
                     <button type="button" class="btn btn-danger btn-sm" onclick='deleteCategory(${c.id})'><i class="fas fa-trash"></i></button>` : '-'}
                 </td>
             </tr>`;
         });
-        if (!catHtml) catHtml = '<tr><td colspan="3" class="text-center text-muted">Belum ada kategori</td></tr>';
+        if (!catHtml) catHtml = '<tr><td colspan="4" class="text-center text-muted">Belum ada kategori</td></tr>';
         $('#op_category').html(opCat);
         $('#catTableBody').html(catHtml);
 
@@ -439,6 +454,7 @@ function editCategory(categoryId){
     $('#cat_code').val(c.code);
     $('#cat_name').val(c.name);
     $('#cat_desc').val(c.description || '');
+    $('#cat_status').prop('checked', parseInt(c.status, 10) === 1);
 }
 
 function resetCategoryForm(){
@@ -446,6 +462,33 @@ function resetCategoryForm(){
     $('#cat_code').val('');
     $('#cat_name').val('');
     $('#cat_desc').val('');
+    $('#cat_status').prop('checked', false);
+}
+
+function toggleCategoryStatus(id, isChecked){
+    if (!isOwner) return;
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        dataType: 'json',
+        data: {
+            action: 'toggle_expense_category_status',
+            id: id,
+            status: isChecked ? 1 : 0
+        },
+        success: function(res){
+            if (res.success){
+                loadExpenseCategories();
+            } else {
+                showAlert('danger', res.message || 'Gagal update status kategori');
+                loadExpenseCategories();
+            }
+        },
+        error: function(){
+            showAlert('danger', 'Gagal update status kategori');
+            loadExpenseCategories();
+        }
+    });
 }
 
 function deleteCategory(id){
