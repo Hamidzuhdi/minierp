@@ -22,6 +22,9 @@ $is_admin = ($user_role === 'Admin');
     .buy-price-column {
         display: none !important;
     }
+    .buy-price-field {
+        display: none !important;
+    }
 </style>
 <?php endif; ?>
 
@@ -129,11 +132,15 @@ $is_admin = ($user_role === 'Admin');
                     </div>
                     
                     <div class="row">
-                        <div class="col-md-6">
+                        <div class="col-md-6 buy-price-field">
                             <div class="mb-3 price-column">
                                 <label for="harga_beli_default" class="form-label">Harga Beli (Moving Average)</label>
-                                <input type="number" step="0.01" class="form-control" id="harga_beli_default" name="harga_beli_default" value="0" readonly>
-                                <small class="text-muted">Otomatis dihitung dari pembelian</small>
+                                <input type="number" step="0.01" class="form-control" id="harga_beli_default" name="harga_beli_default" value="0" <?php echo $is_owner ? '' : 'readonly'; ?>>
+                                <?php if ($is_owner): ?>
+                                <small class="text-muted">Bisa diedit oleh Owner untuk setup awal. Nilai akan tetap terupdate dari Purchase Order.</small>
+                                <?php else: ?>
+                                <small class="text-muted">Hanya Owner yang bisa mengubah harga beli. Nilai otomatis terupdate dari Purchase Order.</small>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <div class="col-md-6">
@@ -171,6 +178,10 @@ $is_admin = ($user_role === 'Admin');
 <?php include '../footer.php'; ?>
 
 <script>
+const userRole = '<?php echo $user_role; ?>';
+const isOwner = (userRole === 'Owner');
+const isAdmin = (userRole === 'Admin');
+
 // Load data saat halaman dimuat
 $(document).ready(function() {
     loadSpareparts();

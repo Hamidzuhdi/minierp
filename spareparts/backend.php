@@ -11,6 +11,8 @@ if (!isset($_SESSION['user_id'])) {
 header('Content-Type: application/json');
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
+$user_role = $_SESSION['role'] ?? 'Admin';
+$is_owner = ($user_role === 'Owner');
 
 // CREATE - Tambah Sparepart Baru
 if ($action === 'create') {
@@ -18,7 +20,7 @@ if ($action === 'create') {
     $kode_sparepart = trim($_POST['kode_sparepart']);
     $barcode = trim($_POST['barcode']);
     $satuan = trim($_POST['satuan']);
-    $harga_beli_default = (float)$_POST['harga_beli_default'];
+    $harga_beli_default = (float)($_POST['harga_beli_default'] ?? 0);
     $harga_jual_default = (float)$_POST['harga_jual_default'];
     $min_stock = (int)$_POST['min_stock'];
     $current_stock = (int)$_POST['current_stock'];
@@ -26,6 +28,11 @@ if ($action === 'create') {
     if (empty($nama)) {
         echo json_encode(['success' => false, 'message' => 'Nama sparepart harus diisi']);
         exit;
+    }
+
+    // Hanya Owner boleh menetapkan harga beli manual saat setup awal.
+    if (!$is_owner) {
+        $harga_beli_default = 0;
     }
     
     // Cek kode_sparepart sudah ada (jika diisi)
@@ -138,7 +145,7 @@ elseif ($action === 'update') {
     $kode_sparepart = trim($_POST['kode_sparepart']);
     $barcode = trim($_POST['barcode']);
     $satuan = trim($_POST['satuan']);
-    $harga_beli_default = (float)$_POST['harga_beli_default'];
+    $harga_beli_default = (float)($_POST['harga_beli_default'] ?? 0);
     $harga_jual_default = (float)$_POST['harga_jual_default'];
     $min_stock = (int)$_POST['min_stock'];
     $current_stock = (int)$_POST['current_stock'];
@@ -146,6 +153,17 @@ elseif ($action === 'update') {
     if (empty($nama)) {
         echo json_encode(['success' => false, 'message' => 'Nama sparepart harus diisi']);
         exit;
+    }
+
+    // Jika bukan Owner, pertahankan harga beli lama (abaikan input dari client).
+    if (!$is_owner) {
+        $existingRes = mysqli_query($conn, "SELECT harga_beli_default FROM spareparts WHERE id = $id LIMIT 1");
+        if ($existingRes && ($existingRow = mysqli_fetch_assoc($existingRes))) {
+            $harga_beli_default = (float)$existingRow['harga_beli_default'];
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Sparepart tidak ditemukan']);
+            exit;
+        }
     }
     
     // Cek kode_sparepart sudah dipakai sparepart lain (jika diisi)
