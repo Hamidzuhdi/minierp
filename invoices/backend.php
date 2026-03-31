@@ -720,6 +720,9 @@ elseif ($action === 'auto_create_invoices') {
         exit;
     }
     
+    // Mulai transaction agar aman
+    mysqli_begin_transaction($conn);
+    
     // Get all SPK with status "Sudah Cetak Invoice" yang belum punya invoice
     $sql = "SELECT s.id FROM spk s
             WHERE s.status_spk = 'Sudah Cetak Invoice'
@@ -728,6 +731,8 @@ elseif ($action === 'auto_create_invoices') {
     
     $created_count = 0;
     $errors = [];
+    $prefix = 'INV';
+    $date_code = date('Ymd');
     
     while ($row = mysqli_fetch_assoc($result)) {
         $spk_id = $row['id'];
@@ -758,12 +763,19 @@ elseif ($action === 'auto_create_invoices') {
         
         $total = $biaya_sparepart + $biaya_jasa;
         
-        // Generate no_invoice unik
-        $prefix = 'INV';
-        $date_code = date('Ymd');
-        $check = mysqli_query($conn, "SELECT COUNT(*) as cnt FROM invoices WHERE DATE(tanggal) = CURDATE()");
-        $row_count = mysqli_fetch_assoc($check);
-        $urutan = $row_count['cnt'] + 1 + $created_count;
+        // Generate no_invoice unik dengan cara yang AMAN
+        // Ambil nomor terakhir untuk hari ini
+        $sql_last = "SELECT no_invoice FROM invoices WHERE no_invoice LIKE '$prefix-$date_code-%' ORDER BY id DESC LIMIT 1 FOR UPDATE";
+        $result_last = mysqli_query($conn, $sql_last);
+        $last_row = mysqli_fetch_assoc($result_last);
+        
+        $last_number = 0;
+        if ($last_row) {
+            $parts = explode('-', $last_row['no_invoice']);
+            $last_number = (int)end($parts);
+        }
+        
+        $urutan = $last_number + 1;
         $no_invoice = $prefix . '-' . $date_code . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
         
         // Insert invoice
@@ -774,8 +786,13 @@ elseif ($action === 'auto_create_invoices') {
             $created_count++;
         } else {
             $errors[] = "SPK ID $spk_id: " . mysqli_error($conn);
+            mysqli_rollback($conn);
+            echo json_encode(['success' => false, 'message' => 'Gagal membuat invoice: ' . mysqli_error($conn)]);
+            exit;
         }
     }
+    
+    mysqli_commit($conn);
     
     if ($created_count > 0) {
         $msg = "Berhasil membuat $created_count invoice otomatis";
