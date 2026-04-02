@@ -28,6 +28,32 @@ include '../header.php';
 
     <div class="card border-0 shadow-sm">
         <div class="card-body">
+            <div class="row g-2 mb-3">
+                <div class="col-md-5">
+                    <input type="text" class="form-control" id="serviceSearchInput" placeholder="Cari kode jasa atau nama jasa...">
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="serviceCategoryFilter">
+                        <option value="">Semua Kategori</option>
+                        <option value="Ringan">Ringan</option>
+                        <option value="Sedang">Sedang</option>
+                        <option value="Berat">Berat</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="serviceStatusFilter">
+                        <option value="">Semua Status</option>
+                        <option value="Y">Aktif</option>
+                        <option value="N">Tidak Aktif</option>
+                    </select>
+                </div>
+                <div class="col-md-1 d-grid">
+                    <button class="btn btn-outline-secondary" type="button" id="serviceResetFilter" title="Reset Filter">
+                        <i class="fas fa-undo"></i>
+                    </button>
+                </div>
+            </div>
+
             <div class="table-responsive">
                 <table class="table table-hover align-middle" id="serviceTable">
                     <thead class="table-light">
@@ -113,10 +139,21 @@ include '../header.php';
 
 <script>
 let serviceModal;
+let allServices = [];
 
 document.addEventListener('DOMContentLoaded', function() {
     serviceModal = new bootstrap.Modal(document.getElementById('serviceModal'));
     loadServices();
+
+    document.getElementById('serviceSearchInput').addEventListener('input', applyServiceFilters);
+    document.getElementById('serviceCategoryFilter').addEventListener('change', applyServiceFilters);
+    document.getElementById('serviceStatusFilter').addEventListener('change', applyServiceFilters);
+    document.getElementById('serviceResetFilter').addEventListener('click', function() {
+        document.getElementById('serviceSearchInput').value = '';
+        document.getElementById('serviceCategoryFilter').value = '';
+        document.getElementById('serviceStatusFilter').value = '';
+        applyServiceFilters();
+    });
 });
 
 function loadServices() {
@@ -124,7 +161,8 @@ function loadServices() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                displayServices(data.data);
+                allServices = data.data || [];
+                applyServiceFilters();
             } else {
                 showAlert('error', 'Gagal memuat data');
             }
@@ -133,6 +171,23 @@ function loadServices() {
             console.error('Error:', error);
             showAlert('error', 'Terjadi kesalahan saat memuat data');
         });
+}
+
+function applyServiceFilters() {
+    const keyword = (document.getElementById('serviceSearchInput').value || '').toLowerCase().trim();
+    const category = document.getElementById('serviceCategoryFilter').value;
+    const status = document.getElementById('serviceStatusFilter').value;
+
+    const filtered = allServices.filter(service => {
+        const matchKeyword = keyword === '' ||
+            (service.kode_jasa || '').toLowerCase().includes(keyword) ||
+            (service.nama_jasa || '').toLowerCase().includes(keyword);
+        const matchCategory = category === '' || (service.kategori || '') === category;
+        const matchStatus = status === '' || (service.is_active || '') === status;
+        return matchKeyword && matchCategory && matchStatus;
+    });
+
+    displayServices(filtered);
 }
 
 function displayServices(services) {

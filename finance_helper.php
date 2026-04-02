@@ -257,6 +257,10 @@ function finance_add_transaction(
         return ['success' => false, 'message' => 'Gagal insert transaksi keuangan: ' . mysqli_error($conn)];
     }
 
+    // Capture insert id immediately before running other queries (e.g. UPDATE balance)
+    // so FK references can reliably point to the created finance transaction row.
+    $transactionId = (int)mysqli_insert_id($conn);
+
     if ($status === 'approved') {
         $sqlBalance = "UPDATE finance_accounts SET current_balance = $newBalance WHERE id = $accountId";
         if (!mysqli_query($conn, $sqlBalance)) {
@@ -266,7 +270,7 @@ function finance_add_transaction(
 
     return [
         'success' => true,
-        'transaction_id' => mysqli_insert_id($conn),
+        'transaction_id' => $transactionId,
         'new_balance' => $newBalance,
     ];
 }

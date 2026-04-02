@@ -66,7 +66,17 @@ while ($svc = mysqli_fetch_assoc($result_services)) {
     $total_jasa += $svc['subtotal'];
 }
 
-$grand_total = $total_sparepart + $total_jasa;
+$subtotal = $total_sparepart + $total_jasa;
+$discount_amount = (strtolower((string)($spk['discount_status'] ?? '')) === 'approved')
+    ? (float)($spk['discount_amount_approved'] ?? 0)
+    : 0;
+if ($discount_amount < 0) {
+    $discount_amount = 0;
+}
+if ($discount_amount > $subtotal) {
+    $discount_amount = $subtotal;
+}
+$grand_total = $subtotal - $discount_amount;
 
 // Generate filename: namacust_nopol_mobil_tglsekarang
 $customer_name_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['customer_name']);
@@ -341,6 +351,10 @@ ob_start();
                 <tr>
                     <td><strong>Total Sparepart:</strong></td>
                     <td class="text-right">Rp <?php echo number_format($total_sparepart, 0, ',', '.'); ?></td>
+                </tr>
+                <tr>
+                    <td><strong>Discount:</strong></td>
+                    <td class="text-right">Rp <?php echo number_format($discount_amount, 0, ',', '.'); ?></td>
                 </tr>
                 <tr class="grand-total">
                     <td><strong>GRAND TOTAL:</strong></td>

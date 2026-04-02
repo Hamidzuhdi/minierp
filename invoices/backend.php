@@ -18,6 +18,8 @@ finance_ensure_default_accounts($conn);
 
 $spkItemPriceColRes = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
 $hasSpkItemPriceCol = $spkItemPriceColRes && mysqli_num_rows($spkItemPriceColRes) > 0;
+$invoiceDiscountColRes = mysqli_query($conn, "SHOW COLUMNS FROM invoices LIKE 'discount_amount'");
+$hasInvoiceDiscountCol = $invoiceDiscountColRes && mysqli_num_rows($invoiceDiscountColRes) > 0;
 
 function ensure_invoice_user_column(mysqli $conn): void {
     $res = mysqli_query($conn, "SHOW COLUMNS FROM invoices LIKE 'user_id'");
@@ -187,7 +189,17 @@ if ($action === 'create_invoice') {
     $services_data = mysqli_fetch_assoc($result_services);
     $biaya_jasa = (float)($services_data['biaya_jasa'] ?? 0);
     
-    $total = $biaya_sparepart + $biaya_jasa;
+    $subtotal = $biaya_sparepart + $biaya_jasa;
+    $discount_amount = (strtolower((string)($spk['discount_status'] ?? '')) === 'approved')
+        ? (float)($spk['discount_amount_approved'] ?? 0)
+        : 0;
+    if ($discount_amount < 0) {
+        $discount_amount = 0;
+    }
+    if ($discount_amount > $subtotal) {
+        $discount_amount = $subtotal;
+    }
+    $total = $subtotal - $discount_amount;
     
     // Generate no_invoice unik
     $prefix = 'INV';
@@ -198,8 +210,13 @@ if ($action === 'create_invoice') {
     $no_invoice = $prefix . '-' . $date_code . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
     
     // Insert invoice
+    if ($hasInvoiceDiscountCol) {
+        $sql = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, discount_amount, total, metode_pembayaran, status_piutang, note, user_id, created_at)
+                VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $discount_amount, $total, 'cash', 'Belum Bayar', NULL, " . (int)$_SESSION['user_id'] . ", NOW())";
+    } else {
         $sql = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, total, metode_pembayaran, status_piutang, note, user_id, created_at)
-            VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'cash', 'Belum Bayar', NULL, " . (int)$_SESSION['user_id'] . ", NOW())";
+                VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'cash', 'Belum Bayar', NULL, " . (int)$_SESSION['user_id'] . ", NOW())";
+    }
     
     if (mysqli_query($conn, $sql)) {
         $invoice_id = mysqli_insert_id($conn);
@@ -724,7 +741,7 @@ elseif ($action === 'auto_create_invoices') {
     mysqli_begin_transaction($conn);
     
     // Get all SPK with status "Sudah Cetak Invoice" yang belum punya invoice
-    $sql = "SELECT s.id FROM spk s
+    $sql = "SELECT s.id, s.discount_status, s.discount_amount_approved FROM spk s
             WHERE s.status_spk = 'Sudah Cetak Invoice'
             AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.spk_id = s.id)";
     $result = mysqli_query($conn, $sql);
@@ -761,7 +778,17 @@ elseif ($action === 'auto_create_invoices') {
         $services_data = mysqli_fetch_assoc($result_services);
         $biaya_jasa = (float)($services_data['biaya_jasa'] ?? 0);
         
-        $total = $biaya_sparepart + $biaya_jasa;
+        $subtotal = $biaya_sparepart + $biaya_jasa;
+        $discount_amount = (strtolower((string)($row['discount_status'] ?? '')) === 'approved')
+            ? (float)($row['discount_amount_approved'] ?? 0)
+            : 0;
+        if ($discount_amount < 0) {
+            $discount_amount = 0;
+        }
+        if ($discount_amount > $subtotal) {
+            $discount_amount = $subtotal;
+        }
+        $total = $subtotal - $discount_amount;
         
         // Generate no_invoice unik dengan cara yang AMAN
         // Ambil nomor terakhir untuk hari ini
@@ -779,8 +806,13 @@ elseif ($action === 'auto_create_invoices') {
         $no_invoice = $prefix . '-' . $date_code . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
         
         // Insert invoice
-        $sql_insert = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, total, metode_pembayaran, status_piutang, note, user_id, created_at)
-            VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'cash', 'Belum Bayar', NULL, " . (int)$_SESSION['user_id'] . ", NOW())";
+        if ($hasInvoiceDiscountCol) {
+            $sql_insert = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, discount_amount, total, metode_pembayaran, status_piutang, note, user_id, created_at)
+                           VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $discount_amount, $total, 'cash', 'Belum Bayar', NULL, " . (int)$_SESSION['user_id'] . ", NOW())";
+        } else {
+            $sql_insert = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, total, metode_pembayaran, status_piutang, note, user_id, created_at)
+                           VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'cash', 'Belum Bayar', NULL, " . (int)$_SESSION['user_id'] . ", NOW())";
+        }
         
         if (mysqli_query($conn, $sql_insert)) {
             $created_count++;

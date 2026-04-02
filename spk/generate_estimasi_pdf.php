@@ -83,7 +83,22 @@ while ($row = mysqli_fetch_assoc($resItems)) {
     $total_sparepart += (float)($row['subtotal'] ?? 0);
 }
 
-$grand_total = $total_jasa + $total_sparepart;
+$subtotal_estimate = $total_jasa + $total_sparepart;
+$discount_status = strtolower((string)($spk['discount_status'] ?? 'none'));
+$discount_requested = (float)($spk['discount_amount_requested'] ?? 0);
+$discount_approved_raw = (float)($spk['discount_amount_approved'] ?? 0);
+$discount_approved = $discount_approved_raw > 0 ? $discount_approved_raw : $discount_requested;
+$discount_to_apply = 0;
+
+if ($discount_status === 'approved' && $discount_approved > 0) {
+    $discount_to_apply = $discount_approved;
+}
+
+if ($discount_to_apply > $subtotal_estimate) {
+    $discount_to_apply = $subtotal_estimate;
+}
+
+$grand_total = $subtotal_estimate - $discount_to_apply;
 
 $qBatch = mysqli_query($conn, "SELECT COALESCE(MAX(batch_no), 0) AS max_batch FROM spk_estimate_pdf_batches WHERE spk_id = $spk_id");
 $batchNo = ((int)(mysqli_fetch_assoc($qBatch)['max_batch'] ?? 0)) + 1;
@@ -116,6 +131,7 @@ th { background: #f5f5f5; }
 <div class="small">Tanggal: ' . htmlspecialchars($spk['tanggal']) . ' | Batch: #' . $batchNo . '</div>
 <div class="small">SPK: ' . htmlspecialchars($spk['kode_unik_reference']) . ' | Kendaraan: ' . htmlspecialchars($spk['nomor_polisi'] . ' - ' . ($spk['merk'] ?? '') . ' ' . ($spk['model'] ?? '')) . '</div>
 <div class="small">Keluhan: ' . htmlspecialchars((string)$spk['keluhan_customer']) . '</div>
+<div class="small">Status Diskon: ' . htmlspecialchars(strtoupper($discount_status)) . ' | Request: ' . rupiah($discount_requested) . ' | Approved: ' . rupiah($discount_approved) . '</div>
 
 <div class="section-title">Detail Jasa</div>
 <table>
@@ -178,6 +194,8 @@ $html .= '
 <div class="footer-total">
     <div>Total Jasa: <strong>' . rupiah($total_jasa) . '</strong></div>
     <div>Total Sparepart: <strong>' . rupiah($total_sparepart) . '</strong></div>
+    <div>Subtotal Estimasi: <strong>' . rupiah($subtotal_estimate) . '</strong></div>
+    <div>Diskon Diterapkan: <strong>' . rupiah($discount_to_apply) . '</strong></div>
     <div>Grand Total Estimasi: <strong>' . rupiah($grand_total) . '</strong></div>
 </div>
 ';
