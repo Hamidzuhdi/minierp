@@ -3,9 +3,9 @@
 date_default_timezone_set('Asia/Jakarta');
 
 $host = "localhost";
-$user = "root"; 
-$pass = "";     
-$db   = "minierp";
+$user = "u414500059_hcs"; 
+$pass = "1209auy_*A";     
+$db   = "u414500059_hcs";
 
 $conn = mysqli_connect($host, $user, $pass, $db);
 
