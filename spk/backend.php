@@ -56,6 +56,12 @@ if ($status_col_res && ($status_col = mysqli_fetch_assoc($status_col_res))) {
     }
 }
 
+// Ensure kilometer column exists for SPK odometer tracking.
+$kilometer_col_res = mysqli_query($conn, "SHOW COLUMNS FROM spk LIKE 'kilometer'");
+if (!$kilometer_col_res || mysqli_num_rows($kilometer_col_res) === 0) {
+    @mysqli_query($conn, "ALTER TABLE spk ADD COLUMN kilometer INT UNSIGNED NULL AFTER vehicle_id");
+}
+
 // CREATE - Buat SPK Baru
 if ($action === 'create') {
     $customer_id = (int)($_POST['customer_id'] ?? 0);
@@ -329,11 +335,25 @@ elseif ($action === 'update_analisa') {
     $analisa_mekanik = trim($_POST['analisa_mekanik']);
     $service_description = trim($_POST['service_description']);
     $saran_service = trim($_POST['saran_service']);
+    $kilometer_raw = trim((string)($_POST['kilometer'] ?? ''));
+    $kilometer_normalized = str_replace(['.', ',', ' '], '', $kilometer_raw);
+
+    if ($kilometer_normalized === '' || !ctype_digit($kilometer_normalized)) {
+        echo json_encode(['success' => false, 'message' => 'Kilometer wajib diisi angka']);
+        exit;
+    }
+
+    $kilometer = (int)$kilometer_normalized;
+    if ($kilometer < 0) {
+        echo json_encode(['success' => false, 'message' => 'Kilometer tidak boleh negatif']);
+        exit;
+    }
     
     $sql = "UPDATE spk SET 
             analisa_mekanik = '" . mysqli_real_escape_string($conn, $analisa_mekanik) . "',
             service_description = '" . mysqli_real_escape_string($conn, $service_description) . "',
-            saran_service = '" . mysqli_real_escape_string($conn, $saran_service) . "'
+            saran_service = '" . mysqli_real_escape_string($conn, $saran_service) . "',
+            kilometer = $kilometer
             WHERE id = $id";
     
     if (mysqli_query($conn, $sql)) {

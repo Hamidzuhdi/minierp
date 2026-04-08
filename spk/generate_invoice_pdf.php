@@ -258,6 +258,19 @@ ob_start();
                 <td><strong>Kendaraan:</strong></td>
                 <td><?php echo $spk['nomor_polisi'] . ' - ' . $spk['merk'] . ' ' . $spk['model'] . ' (' . $spk['tahun'] . ')'; ?></td>
             </tr>
+            <tr>
+                <td></td>
+                <td></td>
+                <td><strong>Kilometer:</strong></td>
+                <td>
+                    <?php
+                        $invoice_kilometer = $spk['kilometer'] ?? null;
+                        echo is_numeric($invoice_kilometer)
+                            ? number_format((float)$invoice_kilometer, 0, ',', '.') . ' KM'
+                            : '-';
+                    ?>
+                </td>
+            </tr>
         </table>
     </div>
 

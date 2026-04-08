@@ -174,6 +174,25 @@ elseif ($action === 'read_one_with_vehicles') {
     }
 }
 
+// READ VEHICLE - Ambil Detail Kendaraan by ID
+elseif ($action === 'read_vehicle') {
+    $vehicle_id = (int)($_GET['vehicle_id'] ?? 0);
+
+    if ($vehicle_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Kendaraan tidak valid']);
+        exit;
+    }
+
+    $sql = "SELECT id, customer_id, nomor_polisi, merk, model, tahun, note FROM vehicles WHERE id = $vehicle_id LIMIT 1";
+    $result = mysqli_query($conn, $sql);
+
+    if ($row = mysqli_fetch_assoc($result)) {
+        echo json_encode(['success' => true, 'data' => $row]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Kendaraan tidak ditemukan']);
+    }
+}
+
 // UPDATE - Edit Customer
 elseif ($action === 'update') {
     $id = (int)$_POST['id'];
@@ -232,6 +251,57 @@ elseif ($action === 'add_vehicle') {
         echo json_encode(['success' => true, 'message' => 'Kendaraan berhasil ditambahkan']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal menambahkan kendaraan: ' . mysqli_error($conn)]);
+    }
+}
+
+// UPDATE VEHICLE - Edit Kendaraan Customer
+elseif ($action === 'update_vehicle') {
+    $vehicle_id = (int)($_POST['vehicle_id'] ?? 0);
+    $customer_id = (int)($_POST['customer_id'] ?? 0);
+    $nomor_polisi = strtoupper(trim((string)($_POST['nomor_polisi'] ?? '')));
+    $merk = trim((string)($_POST['merk'] ?? ''));
+    $model = trim((string)($_POST['model'] ?? ''));
+    $tahun = !empty($_POST['tahun']) ? (int)$_POST['tahun'] : null;
+    $note = trim((string)($_POST['note'] ?? ''));
+
+    if ($vehicle_id <= 0 || $customer_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Data kendaraan tidak valid']);
+        exit;
+    }
+
+    if (empty($nomor_polisi)) {
+        echo json_encode(['success' => false, 'message' => 'Nomor polisi harus diisi']);
+        exit;
+    }
+
+    $exists = mysqli_query($conn, "SELECT id FROM vehicles WHERE id = $vehicle_id LIMIT 1");
+    if (!$exists || mysqli_num_rows($exists) === 0) {
+        echo json_encode(['success' => false, 'message' => 'Kendaraan tidak ditemukan']);
+        exit;
+    }
+
+    $check = mysqli_query(
+        $conn,
+        "SELECT id FROM vehicles WHERE nomor_polisi = '" . mysqli_real_escape_string($conn, $nomor_polisi) . "' AND id != $vehicle_id"
+    );
+    if ($check && mysqli_num_rows($check) > 0) {
+        echo json_encode(['success' => false, 'message' => 'Nomor polisi sudah terdaftar']);
+        exit;
+    }
+
+    $sql = "UPDATE vehicles SET
+            customer_id = $customer_id,
+            nomor_polisi = '" . mysqli_real_escape_string($conn, $nomor_polisi) . "',
+            merk = '" . mysqli_real_escape_string($conn, $merk) . "',
+            model = '" . mysqli_real_escape_string($conn, $model) . "',
+            tahun = " . ($tahun ? $tahun : 'NULL') . ",
+            note = '" . mysqli_real_escape_string($conn, $note) . "'
+            WHERE id = $vehicle_id";
+
+    if (mysqli_query($conn, $sql)) {
+        echo json_encode(['success' => true, 'message' => 'Kendaraan berhasil diupdate']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal mengupdate kendaraan: ' . mysqli_error($conn)]);
     }
 }
 
