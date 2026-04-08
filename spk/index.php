@@ -204,6 +204,12 @@ $is_owner = ($user_role === 'Owner');
                                 <label for="saran_service" class="form-label">Saran Service</label>
                                 <textarea class="form-control" id="saran_service" name="saran_service" rows="2" placeholder="Saran untuk customer..."></textarea>
                             </div>
+
+                            <div class="mb-3">
+                                <label for="kilometer" class="form-label">Kilometer Kendaraan *</label>
+                                <input type="text" class="form-control" id="kilometer" name="kilometer" inputmode="numeric" autocomplete="off" required placeholder="Contoh: 125.000">
+                                <small class="text-muted">Isi kilometer/odometer saat kendaraan masuk bengkel.</small>
+                            </div>
                         </div>
                         
                         <div class="col-md-6">
@@ -399,6 +405,9 @@ $(document).ready(function() {
     $('#vehicleFilter').on('change', loadSPKs);
     $('#discountFlowFilter').on('change', loadSPKs);
     $('#discount_amount_requested').on('input', refreshEstimasiBiaya);
+    $('#kilometer').on('input', function() {
+        this.value = formatKilometerInput(this.value);
+    });
     
     // Load vehicles saat customer dipilih
     $('#customer_id').on('change', function() {
@@ -707,6 +716,7 @@ function viewDetail(id) {
                                 <tr><th>Status:</th><td>${getStatusBadge(spk.status_spk)}</td></tr>
                                 <tr><th>Customer:</th><td>${spk.customer_name}<br><small>${spk.customer_phone || ''}</small></td></tr>
                                 <tr><th>Kendaraan:</th><td>${spk.nomor_polisi} - ${spk.merk} ${spk.model || ''} (${spk.tahun || '-'})</td></tr>
+                                <tr><th>Kilometer:</th><td>${(spk.kilometer !== null && spk.kilometer !== '') ? (formatNumber(spk.kilometer) + ' KM') : '-'}</td></tr>
                             </table>
                         </div>
                         <div class="col-md-6">
@@ -850,6 +860,7 @@ function openAnalisaModal(id) {
                 $('#analisa_mekanik').val(spk.analisa_mekanik || '');
                 $('#service_description').val(spk.service_description || '');
                 $('#saran_service').val(spk.saran_service || '');
+                $('#kilometer').val((spk.kilometer !== null && spk.kilometer !== '') ? formatKilometerInput(spk.kilometer) : '');
                 renderDiscountSection(spk);
                 loadDiscountHistory(spk.id);
                 
@@ -961,6 +972,14 @@ function createInvoiceFromSPK(spkId) {
 
 function formatNumber(num) {
     return parseFloat(num).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+}
+
+function formatKilometerInput(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) {
+        return '';
+    }
+    return parseInt(digits, 10).toLocaleString('id-ID', {maximumFractionDigits: 0});
 }
 
 function formatDate(date) {

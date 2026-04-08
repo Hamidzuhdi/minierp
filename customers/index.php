@@ -163,13 +163,14 @@ $reminder_from_query = (($_GET['reminder'] ?? '') === '1') ? '1' : '0';
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Tambah Kendaraan</h5>
+                <h5 class="modal-title" id="addVehicleModalTitle">Tambah Kendaraan</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form id="addVehicleForm">
                 <div class="modal-body">
                     <input type="hidden" id="vehicle_customer_id" name="customer_id">
-                    <input type="hidden" name="action" value="add_vehicle">
+                    <input type="hidden" id="vehicle_record_id" name="vehicle_id" value="">
+                    <input type="hidden" id="addVehicleAction" name="action" value="add_vehicle">
                     
                     <div class="mb-3">
                         <label for="vehicle_nomor_polisi" class="form-label">Nomor Polisi *</label>
@@ -209,6 +210,8 @@ $reminder_from_query = (($_GET['reminder'] ?? '') === '1') ? '1' : '0';
 
 <script>
 const reminderFromQuery = '<?php echo $reminder_from_query; ?>';
+let currentDetailCustomerId = null;
+let reopenDetailAfterVehicleSave = false;
 
 // Load data saat halaman dimuat
 $(document).ready(function() {
@@ -308,6 +311,7 @@ function openAddModal() {
 
 // View customer detail with vehicles
 function viewCustomerDetail(id) {
+    currentDetailCustomerId = id;
     $.ajax({
         url: 'backend.php?action=read_one_with_vehicles&id=' + id,
         type: 'GET',
@@ -326,12 +330,17 @@ function viewCustomerDetail(id) {
                         <tr><th>Dibuat:</th><td>${formatDateTime(customer.created_at)}</td></tr>
                     </table>
                     
-                    <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="fas fa-car"></i> Kendaraan Terdaftar</h6>
+                    <h6 class="border-bottom pb-2 mb-3 mt-4 d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-car"></i> Kendaraan Terdaftar</span>
+                        <button type="button" class="btn btn-sm btn-success" onclick="openAddVehicleModal(${customer.id}, true)">
+                            <i class="fas fa-plus"></i> Tambah Kendaraan
+                        </button>
+                    </h6>
                 `;
                 
                 if (vehicles.length > 0) {
                     html += '<div class="table-responsive"><table class="table table-bordered table-sm">';
-                    html += '<thead><tr><th>Nomor Polisi</th><th>Merk</th><th>Model</th><th>Tahun</th><th>Catatan</th></tr></thead><tbody>';
+                    html += '<thead><tr><th>Nomor Polisi</th><th>Merk</th><th>Model</th><th>Tahun</th><th>Catatan</th><th>Aksi</th></tr></thead><tbody>';
                     vehicles.forEach(function(v) {
                         html += `
                             <tr>
@@ -340,6 +349,11 @@ function viewCustomerDetail(id) {
                                 <td>${v.model || '-'}</td>
                                 <td>${v.tahun || '-'}</td>
                                 <td>${v.note || '-'}</td>
+                                <td>
+                                    <button class="btn btn-warning btn-sm" onclick="editCustomerVehicle(${v.id})" title="Edit Kendaraan">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                </td>
                             </tr>
                         `;
                     });
@@ -381,12 +395,56 @@ function editCustomer(id) {
 }
 
 // Open add vehicle modal
-function openAddVehicleModal(customerId) {
+function openAddVehicleModal(customerId, returnToDetail = false) {
+    reopenDetailAfterVehicleSave = !!returnToDetail;
+    if (reopenDetailAfterVehicleSave) {
+        currentDetailCustomerId = customerId;
+    }
+
+    $('#addVehicleModalTitle').text('Tambah Kendaraan');
     $('#vehicle_customer_id').val(customerId);
     $('#addVehicleForm')[0].reset();
     $('#vehicle_customer_id').val(customerId); // Set lagi after reset
+    $('#vehicle_record_id').val('');
+    $('#addVehicleAction').val('add_vehicle');
     $('#customerModal').modal('hide');
+    $('#detailModal').modal('hide');
     $('#addVehicleModal').modal('show');
+}
+
+function editCustomerVehicle(vehicleId) {
+    $.ajax({
+        url: 'backend.php?action=read_vehicle&vehicle_id=' + vehicleId,
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                const vehicle = response.data;
+                currentDetailCustomerId = vehicle.customer_id;
+                reopenDetailAfterVehicleSave = true;
+
+                $('#addVehicleModalTitle').text('Edit Kendaraan');
+                $('#addVehicleForm')[0].reset();
+                $('#vehicle_customer_id').val(vehicle.customer_id);
+                $('#vehicle_record_id').val(vehicle.id);
+                $('#addVehicleAction').val('update_vehicle');
+                $('#vehicle_nomor_polisi').val(vehicle.nomor_polisi || '');
+                $('#vehicle_merk').val(vehicle.merk || '');
+                $('#vehicle_model').val(vehicle.model || '');
+                $('#vehicle_tahun').val(vehicle.tahun || '');
+                $('#vehicle_note').val(vehicle.note || '');
+
+                $('#detailModal').modal('hide');
+                $('#customerModal').modal('hide');
+                $('#addVehicleModal').modal('show');
+            } else {
+                showAlert('danger', response.message || 'Data kendaraan tidak ditemukan');
+            }
+        },
+        error: function() {
+            showAlert('danger', 'Terjadi kesalahan saat mengambil data kendaraan');
+        }
+    });
 }
 
 // Submit add vehicle form
@@ -403,6 +461,10 @@ $('#addVehicleForm').on('submit', function(e) {
                 showAlert('success', response.message);
                 $('#addVehicleModal').modal('hide');
                 loadCustomers();
+                if (reopenDetailAfterVehicleSave && currentDetailCustomerId) {
+                    viewCustomerDetail(currentDetailCustomerId);
+                }
+                reopenDetailAfterVehicleSave = false;
             } else {
                 showAlert('danger', response.message);
             }
