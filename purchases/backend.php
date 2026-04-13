@@ -13,6 +13,17 @@ header('Content-Type: application/json');
 
 finance_ensure_default_accounts($conn);
 
+// Ensure purchase tax and item discount columns exist for revised purchase flow.
+$tax_col_res = mysqli_query($conn, "SHOW COLUMNS FROM purchases LIKE 'tax_amount'");
+if (!$tax_col_res || mysqli_num_rows($tax_col_res) === 0) {
+    @mysqli_query($conn, "ALTER TABLE purchases ADD COLUMN tax_amount DECIMAL(14,2) NOT NULL DEFAULT 0 AFTER total");
+}
+
+$discount_col_res = mysqli_query($conn, "SHOW COLUMNS FROM purchase_items LIKE 'discount_amount'");
+if (!$discount_col_res || mysqli_num_rows($discount_col_res) === 0) {
+    @mysqli_query($conn, "ALTER TABLE purchase_items ADD COLUMN discount_amount DECIMAL(14,2) NOT NULL DEFAULT 0 AFTER harga_beli");
+}
+
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 // CREATE - Tambah Purchase Baru
@@ -21,81 +32,116 @@ if ($action === 'create') {
     $tanggal = $_POST['tanggal'];
     $items_json = $_POST['items'];
     $items = json_decode($items_json, true);
+    $tax_amount = (float)($_POST['tax_amount'] ?? 0);
+    if ($tax_amount < 0) {
+        $tax_amount = 0;
+    }
     
-    // Cek role user
-    $user_role = $_SESSION['role'] ?? 'Admin';
-    $is_owner = ($user_role === 'Owner');
-    
-    // Validasi: Owner wajib isi supplier
-    if ($is_owner && empty($supplier)) {
+    // Supplier wajib diisi oleh semua role.
+    if (empty($supplier)) {
         echo json_encode(['success' => false, 'message' => 'Supplier wajib diisi']);
         exit;
     }
     
-    if (empty($tanggal) || empty($items)) {
+    if (empty($tanggal) || !is_array($items) || count($items) === 0) {
         echo json_encode(['success' => false, 'message' => 'Data tidak lengkap']);
         exit;
     }
     
-    // Set supplier default jika kosong (dari Admin)
-    if (empty($supplier)) {
-        $supplier = 'Pending - Akan diisi Owner';
-    }
-    
-    // Hitung total
-    $total = 0;
+    // Hitung total item setelah diskon per item.
+    $total_item_after_discount = 0;
     foreach ($items as &$item) {
-        // Jika bukan owner, gunakan harga_beli_default dari database
-        if (!$is_owner) {
-            $sql_price = "SELECT harga_beli_default FROM spareparts WHERE id = " . (int)$item['sparepart_id'];
-            $result_price = mysqli_query($conn, $sql_price);
-            if ($row_price = mysqli_fetch_assoc($result_price)) {
-                $item['harga_beli'] = (float)$row_price['harga_beli_default'];
-            } else {
-                $item['harga_beli'] = 0;
-            }
+        $sparepart_id = (int)($item['sparepart_id'] ?? 0);
+        $qty = max(0, (int)($item['qty'] ?? 0));
+        if ($sparepart_id <= 0 || $qty <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Sparepart dan qty harus valid']);
+            exit;
         }
-        $total += $item['qty'] * $item['harga_beli'];
+
+        $item['sparepart_id'] = $sparepart_id;
+        $item['qty'] = $qty;
+
+        $harga_beli = max(0, (float)($item['harga_beli'] ?? 0));
+        $line_base = $qty * $harga_beli;
+        $discount_amount = max(0, (float)($item['discount_amount'] ?? 0));
+        if ($discount_amount > $line_base) {
+            $discount_amount = $line_base;
+        }
+        $line_subtotal = $line_base - $discount_amount;
+
+        $item['harga_beli'] = $harga_beli;
+        $item['discount_amount'] = $discount_amount;
+        $item['subtotal'] = $line_subtotal;
+        $total_item_after_discount += $line_subtotal;
     }
     unset($item); // CRITICAL: Break the reference to avoid bugs in next foreach
-    
-    
-    // Insert purchase header
-    $sql = "INSERT INTO purchases (supplier, tanggal, total, status, is_paid, created_by) 
-            VALUES ('" . mysqli_real_escape_string($conn, $supplier) . "',
-                    '" . mysqli_real_escape_string($conn, $tanggal) . "',
-                    $total,
-                    'Pending Approval',
-                    'Belum Bayar',
-                    " . $_SESSION['user_id'] . ")";
-    
-    if (mysqli_query($conn, $sql)) {
+
+    $total = $total_item_after_discount + $tax_amount;
+
+    mysqli_begin_transaction($conn);
+    try {
+        // Purchase langsung berstatus Approved agar owner fokus ke pembayaran.
+        $sql = "INSERT INTO purchases (supplier, tanggal, total, tax_amount, status, is_paid, created_by) 
+                VALUES ('" . mysqli_real_escape_string($conn, $supplier) . "',
+                        '" . mysqli_real_escape_string($conn, $tanggal) . "',
+                        $total,
+                        $tax_amount,
+                        'Approved',
+                        'Belum Bayar',
+                        " . (int)$_SESSION['user_id'] . ")";
+
+        if (!mysqli_query($conn, $sql)) {
+            throw new Exception('Gagal menambahkan purchase: ' . mysqli_error($conn));
+        }
+
         $purchase_id = mysqli_insert_id($conn);
-        
-        // Insert purchase items
-        foreach ($items as $index => $item) {
-            $subtotal = $item['qty'] * $item['harga_beli'];
+
+        foreach ($items as $item) {
+            $sparepart_id = (int)$item['sparepart_id'];
+            $qty_baru = (int)$item['qty'];
+            $harga_beli_baru = (float)$item['harga_beli'];
+            $discount_amount = (float)($item['discount_amount'] ?? 0);
             $barcode = isset($item['barcode']) ? "'" . mysqli_real_escape_string($conn, $item['barcode']) . "'" : 'NULL';
-            
-            $sql_item = "INSERT INTO purchase_items (purchase_id, sparepart_id, qty, harga_beli, barcode) 
-                        VALUES ($purchase_id, 
-                                " . (int)$item['sparepart_id'] . ",
-                                " . (int)$item['qty'] . ",
-                                " . (float)$item['harga_beli'] . ",
-                                $barcode)";
-            
+
+            $sql_item = "INSERT INTO purchase_items (purchase_id, sparepart_id, qty, harga_beli, discount_amount, barcode) 
+                        VALUES ($purchase_id, $sparepart_id, $qty_baru, $harga_beli_baru, $discount_amount, $barcode)";
             if (!mysqli_query($conn, $sql_item)) {
-                error_log("Purchase item insert error: " . mysqli_error($conn));
+                throw new Exception('Gagal menambahkan item purchase: ' . mysqli_error($conn));
+            }
+
+            $sql_get_current = "SELECT current_stock, harga_beli_default FROM spareparts WHERE id = $sparepart_id LIMIT 1";
+            $result_current = mysqli_query($conn, $sql_get_current);
+            $current_data = $result_current ? mysqli_fetch_assoc($result_current) : null;
+            if (!$current_data) {
+                throw new Exception('Sparepart tidak ditemukan saat update stock');
+            }
+
+            $qty_lama = (int)($current_data['current_stock'] ?? 0);
+            $harga_lama = (float)($current_data['harga_beli_default'] ?? 0);
+            if (($qty_lama + $qty_baru) > 0) {
+                $moving_average = (($qty_lama * $harga_lama) + ($qty_baru * $harga_beli_baru)) / ($qty_lama + $qty_baru);
+            } else {
+                $moving_average = $harga_beli_baru;
+            }
+
+            $sql_stock = "UPDATE spareparts
+                          SET current_stock = current_stock + $qty_baru,
+                              harga_beli_default = $moving_average
+                          WHERE id = $sparepart_id";
+            if (!mysqli_query($conn, $sql_stock)) {
+                throw new Exception('Gagal update stock sparepart: ' . mysqli_error($conn));
             }
         }
-        
+
+        mysqli_commit($conn);
         echo json_encode([
-            'success' => true, 
-            'message' => 'Purchase berhasil ditambahkan', 
+            'success' => true,
+            'message' => 'Purchase berhasil ditambahkan, stock langsung bertambah',
             'purchase_id' => $purchase_id
         ]);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Gagal menambahkan purchase: ' . mysqli_error($conn)]);
+    } catch (Exception $e) {
+        mysqli_rollback($conn);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
 }
 
@@ -150,7 +196,8 @@ elseif ($action === 'read_one') {
     
     if ($row = mysqli_fetch_assoc($result)) {
         // Get purchase items
-        $sql_items = "SELECT pi.*, s.nama as sparepart_name, s.satuan
+        $sql_items = "SELECT pi.*, s.nama as sparepart_name, s.satuan,
+                  GREATEST((pi.qty * pi.harga_beli) - COALESCE(pi.discount_amount, 0), 0) as subtotal_calc
                       FROM purchase_items pi
                       JOIN spareparts s ON pi.sparepart_id = s.id
                       WHERE pi.purchase_id = $id";
@@ -158,6 +205,8 @@ elseif ($action === 'read_one') {
         
         $items = [];
         while ($item = mysqli_fetch_assoc($result_items)) {
+            $item['subtotal'] = $item['subtotal_calc'];
+            unset($item['subtotal_calc']);
             $items[] = $item;
         }
         
@@ -167,6 +216,25 @@ elseif ($action === 'read_one') {
     } else {
         echo json_encode(['success' => false, 'message' => 'Purchase tidak ditemukan']);
     }
+}
+
+// GET SUPPLIER HISTORY - Untuk datalist supplier pada create purchase
+elseif ($action === 'get_supplier_history') {
+    $sql = "SELECT supplier
+            FROM purchases
+            WHERE TRIM(COALESCE(supplier, '')) <> ''
+              AND supplier <> 'Pending - Akan diisi Owner'
+            GROUP BY supplier
+            ORDER BY MAX(id) DESC
+            LIMIT 100";
+    $result = mysqli_query($conn, $sql);
+
+    $suppliers = [];
+    while ($row = mysqli_fetch_assoc($result)) {
+        $suppliers[] = $row;
+    }
+
+    echo json_encode(['success' => true, 'data' => $suppliers]);
 }
 
 // GET SPAREPARTS - Untuk dropdown
@@ -195,6 +263,12 @@ elseif ($action === 'get_finance_accounts') {
 
 // UPDATE PURCHASE - Owner isi supplier dan harga
 elseif ($action === 'update_purchase') {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Flow baru aktif: stock langsung masuk saat create, owner tinggal bayar/refund. Edit purchase dinonaktifkan.'
+    ]);
+    exit;
+
     $purchase_id = (int)$_POST['purchase_id'];
     $supplier = trim($_POST['supplier']);
     
@@ -256,18 +330,38 @@ elseif ($action === 'update_purchase') {
 elseif ($action === 'update_status') {
     $id = (int)$_POST['id'];
     $new_status = $_POST['status'];
+    $user_role = $_SESSION['role'] ?? 'Admin';
+
+    if ($user_role !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang dapat approve/refund purchase']);
+        exit;
+    }
     
-    // Validasi status
-    if (!in_array($new_status, ['Pending Approval', 'Approved', 'Refund'])) {
-        echo json_encode(['success' => false, 'message' => 'Status tidak valid']);
+    // Flow baru: owner hanya butuh aksi refund bila diperlukan.
+    if ($new_status !== 'Refund') {
+        echo json_encode(['success' => false, 'message' => 'Aksi status yang diizinkan hanya Refund']);
         exit;
     }
     
     // Get current purchase data
-    $sql = "SELECT status FROM purchases WHERE id = $id";
+    $sql = "SELECT status, is_paid FROM purchases WHERE id = $id";
     $result = mysqli_query($conn, $sql);
     $purchase = mysqli_fetch_assoc($result);
+    if (!$purchase) {
+        echo json_encode(['success' => false, 'message' => 'Purchase tidak ditemukan']);
+        exit;
+    }
     $old_status = $purchase['status'];
+
+    if ($old_status === 'Refund') {
+        echo json_encode(['success' => false, 'message' => 'Purchase sudah berstatus Refund']);
+        exit;
+    }
+
+    if (($purchase['is_paid'] ?? '') === 'Sudah Bayar') {
+        echo json_encode(['success' => false, 'message' => 'Ubah dulu status pembayaran menjadi Belum Bayar sebelum Refund']);
+        exit;
+    }
     
     // Get purchase items
     $sql_items = "SELECT sparepart_id, qty FROM purchase_items WHERE purchase_id = $id";
@@ -282,69 +376,20 @@ elseif ($action === 'update_status') {
     
     try {
         // Update purchase status
-        $sql_update = "UPDATE purchases SET status = '" . mysqli_real_escape_string($conn, $new_status) . "' WHERE id = $id";
-        mysqli_query($conn, $sql_update);
-        
-        // Update stock based on status change
-        if ($new_status === 'Approved' && $old_status !== 'Approved') {
-            // APPROVE: Tambah stock dan update harga beli dengan moving average
-            foreach ($items as $item) {
-                // Get purchase item dengan harga beli
-                $sql_get_price = "SELECT harga_beli FROM purchase_items 
-                                  WHERE purchase_id = $id AND sparepart_id = " . (int)$item['sparepart_id'];
-                $result_price = mysqli_query($conn, $sql_get_price);
-                $price_data = mysqli_fetch_assoc($result_price);
-                $harga_beli_baru = (float)$price_data['harga_beli'];
-                
-                // Get current stock dan harga beli lama
-                $sql_get_current = "SELECT current_stock, harga_beli_default 
-                                   FROM spareparts WHERE id = " . (int)$item['sparepart_id'];
-                $result_current = mysqli_query($conn, $sql_get_current);
-                $current_data = mysqli_fetch_assoc($result_current);
-                $qty_lama = (int)$current_data['current_stock'];
-                $harga_lama = (float)$current_data['harga_beli_default'];
-                $qty_baru = (int)$item['qty'];
-                
-                // Hitung moving average
-                // Formula: (qty_lama × harga_lama) + (qty_baru × harga_beli_baru) / (qty_lama + qty_baru)
-                if (($qty_lama + $qty_baru) > 0) {
-                    $moving_average = (($qty_lama * $harga_lama) + ($qty_baru * $harga_beli_baru)) / ($qty_lama + $qty_baru);
-                } else {
-                    $moving_average = $harga_beli_baru;
-                }
-                
-                // Update stock dan harga beli
-                $sql_stock = "UPDATE spareparts 
-                             SET current_stock = current_stock + $qty_baru,
-                                 harga_beli_default = $moving_average
-                             WHERE id = " . (int)$item['sparepart_id'];
-                mysqli_query($conn, $sql_stock);
+        $sql_update = "UPDATE purchases SET status = 'Refund' WHERE id = $id";
+        if (!mysqli_query($conn, $sql_update)) {
+            throw new Exception('Gagal update status purchase');
+        }
+
+        foreach ($items as $item) {
+            $sql_stock = "UPDATE spareparts 
+                         SET current_stock = GREATEST(current_stock - " . (int)$item['qty'] . ", 0)
+                         WHERE id = " . (int)$item['sparepart_id'];
+            if (!mysqli_query($conn, $sql_stock)) {
+                throw new Exception('Gagal update stock saat refund');
             }
-            $message = 'Purchase berhasil di-approve, stock dan harga beli telah diupdate';
         }
-        elseif ($new_status === 'Refund' && $old_status === 'Approved') {
-            // REFUND dari Approved: Kurangi stock
-            foreach ($items as $item) {
-                $sql_stock = "UPDATE spareparts 
-                             SET current_stock = current_stock - " . (int)$item['qty'] . " 
-                             WHERE id = " . (int)$item['sparepart_id'];
-                mysqli_query($conn, $sql_stock);
-            }
-            $message = 'Purchase berhasil di-refund dan stock telah dikurangi';
-        }
-        elseif ($new_status === 'Pending Approval' && $old_status === 'Approved') {
-            // Batalkan Approve: Kurangi stock
-            foreach ($items as $item) {
-                $sql_stock = "UPDATE spareparts 
-                             SET current_stock = current_stock - " . (int)$item['qty'] . " 
-                             WHERE id = " . (int)$item['sparepart_id'];
-                mysqli_query($conn, $sql_stock);
-            }
-            $message = 'Status berhasil diubah dan stock telah disesuaikan';
-        }
-        else {
-            $message = 'Status berhasil diupdate';
-        }
+        $message = 'Purchase berhasil di-refund dan stock telah dikurangi';
         
         mysqli_commit($conn);
         echo json_encode(['success' => true, 'message' => $message]);
@@ -359,12 +404,18 @@ elseif ($action === 'update_status') {
 elseif ($action === 'update_payment') {
     $id = (int)$_POST['id'];
     $is_paid = $_POST['is_paid'];
+    $user_role = $_SESSION['role'] ?? 'Admin';
+
+    if ($user_role !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang dapat memproses pembayaran purchase']);
+        exit;
+    }
 
     $payment_account_code = $_POST['payment_account_code'] ?? '';
     $payment_note = trim($_POST['payment_note'] ?? '');
     $payment_date = $_POST['payment_date'] ?? date('Y-m-d');
 
-    $qPurchase = mysqli_query($conn, "SELECT id, total, is_paid FROM purchases WHERE id = $id LIMIT 1");
+    $qPurchase = mysqli_query($conn, "SELECT id, total, is_paid, status FROM purchases WHERE id = $id LIMIT 1");
     $purchase = mysqli_fetch_assoc($qPurchase);
     if (!$purchase) {
         echo json_encode(['success' => false, 'message' => 'Purchase tidak ditemukan']);
@@ -375,6 +426,9 @@ elseif ($action === 'update_payment') {
     try {
         // Mark as paid: create finance out transaction
         if ($is_paid === 'Sudah Bayar') {
+            if (($purchase['status'] ?? '') === 'Refund') {
+                throw new Exception('Purchase berstatus Refund tidak bisa dibayar');
+            }
             if ($purchase['is_paid'] === 'Sudah Bayar') {
                 throw new Exception('Purchase ini sudah ditandai Sudah Bayar');
             }
@@ -397,7 +451,8 @@ elseif ($action === 'update_payment') {
                 'purchase',
                 $id,
                 $payment_note !== '' ? $payment_note : 'Pengeluaran PO #' . $id,
-                (int)$_SESSION['user_id']
+                (int)$_SESSION['user_id'],
+                'approved'
             );
 
             if (!$tx['success']) {
@@ -406,6 +461,7 @@ elseif ($action === 'update_payment') {
 
             $sql = "UPDATE purchases
                     SET is_paid = 'Sudah Bayar',
+                        status = 'Approved',
                         payment_account_id = {$account['id']},
                         paid_at = NOW(),
                         payment_note = '" . mysqli_real_escape_string($conn, $payment_note) . "'
