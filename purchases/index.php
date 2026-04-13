@@ -11,18 +11,10 @@ if (!isset($_SESSION['user_id'])) {
 $page_title = "Manajemen Pembelian";
 include '../header.php';
 
-// Cek role untuk hide/show kolom harga
+// Cek role user
 $user_role = $_SESSION['role'] ?? 'Admin';
 $is_owner = ($user_role === 'Owner');
 ?>
-
-<?php if (!$is_owner): ?>
-<style>
-    .price-column {
-        display: none !important;
-    }
-</style>
-<?php endif; ?>
 
 <div class="container-fluid py-4">
     <div class="row">
@@ -46,6 +38,18 @@ $is_owner = ($user_role === 'Owner');
                                 <option value="Approved">Approved</option>
                                 <option value="Refund">Refund</option>
                             </select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="alert alert-success mb-0 py-2">
+                                <strong>Saldo Cash:</strong> <span id="balanceCash">Rp 0</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="alert alert-primary mb-0 py-2">
+                                <strong>Saldo Rekening:</strong> <span id="balanceBank">Rp 0</span>
+                            </div>
                         </div>
                     </div>
                     <div class="table-responsive">
@@ -83,14 +87,18 @@ $is_owner = ($user_role === 'Owner');
                 <h5 class="modal-title">Tambah Purchase</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form id="purchaseForm">
+            <form id="purchaseForm" autocomplete="off">
                 <div class="modal-body">
                     <input type="hidden" name="action" value="create">
                     
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label for="supplier" class="form-label">Supplier <?php echo $is_owner ? '*' : '(Opsional)'; ?></label>
-                            <input type="text" class="form-control" id="supplier" name="supplier" <?php echo $is_owner ? 'required' : ''; ?> placeholder="<?php echo $is_owner ? 'Nama supplier' : 'Akan diisi owner'; ?>">
+                            <label for="supplier" class="form-label">Supplier *</label>
+                            <input type="text" class="form-control" id="supplier" name="supplier" required placeholder="Ketik supplier baru atau pilih dari histori">
+                            <select class="form-select mt-2" id="supplier_history_select">
+                                <option value="">-- Pilih Supplier Lama --</option>
+                            </select>
+                            <small class="text-muted">Dropdown untuk supplier lama (bisa search), input atas untuk supplier baru.</small>
                         </div>
                         <div class="col-md-6">
                             <label for="tanggal" class="form-label">Tanggal *</label>
@@ -105,10 +113,11 @@ $is_owner = ($user_role === 'Owner');
                         <table class="table table-bordered" id="itemsTable">
                             <thead>
                                 <tr>
-                                    <th width="40%">Sparepart</th>
-                                    <th width="15%">Qty</th>
-                                    <th width="20%" class="price-column">Harga Beli</th>
-                                    <th width="20%" class="price-column">Subtotal</th>
+                                    <th width="34%">Sparepart</th>
+                                    <th width="12%">Qty</th>
+                                    <th width="16%" class="price-column">Harga Beli</th>
+                                    <th width="15%">Diskon</th>
+                                    <th width="18%" class="price-column">Subtotal</th>
                                     <th width="5%">
                                         <button type="button" class="btn btn-success btn-sm" onclick="addItemRow()">
                                             <i class="fas fa-plus"></i>
@@ -121,8 +130,14 @@ $is_owner = ($user_role === 'Owner');
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td colspan="3" class="text-end"><strong>TOTAL:</strong></td>
-                                    <td colspan="2" class="price-column"><strong id="grandTotal">Rp 0</strong></td>
+                                    <td colspan="4" class="text-end"><strong>Pajak:</strong></td>
+                                    <td colspan="2">
+                                        <input type="number" class="form-control form-control-sm" id="tax_amount" name="tax_amount" value="0" min="0" step="0.01" oninput="calculateGrandTotal()">
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="text-end"><strong>TOTAL + PAJAK:</strong></td>
+                                    <td colspan="2"><strong id="grandTotal">Rp 0</strong></td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -252,9 +267,8 @@ const isOwner = (userRole === 'Owner');
 $(document).ready(function() {
     loadPurchases();
     loadSpareparts();
-    if (isOwner) {
-        loadFinanceAccounts();
-    }
+    loadFinanceAccounts();
+    loadSupplierHistory();
     
     // Set tanggal hari ini sebagai default
     $('#tanggal').val(new Date().toISOString().split('T')[0]);
@@ -291,15 +305,69 @@ function loadFinanceAccounts() {
         success: function(response) {
             if (response.success) {
                 financeAccounts = response.data;
+                const cashBalance = getAccountBalanceByCode('cash');
+                const bankBalance = getAccountBalanceByCode('bank');
+                $('#balanceCash').text('Rp ' + formatNumber(cashBalance));
+                $('#balanceBank').text('Rp ' + formatNumber(bankBalance));
+
                 let options = '<option value="">-- Pilih Sumber Dana --</option>';
                 response.data.forEach(function(acc) {
                     options += `<option value="${acc.code}">${acc.name} (Saldo: Rp ${formatNumber(acc.current_balance)})</option>`;
                 });
-                $('#pay_account_code').html(options);
+                if ($('#pay_account_code').length) {
+                    $('#pay_account_code').html(options);
+                }
             }
         }
     });
 }
+
+function getAccountBalanceByCode(code) {
+    const account = financeAccounts.find(acc => String(acc.code || '').toLowerCase() === String(code || '').toLowerCase());
+    return account ? (parseFloat(account.current_balance) || 0) : 0;
+}
+
+function loadSupplierHistory() {
+    $.ajax({
+        url: 'backend.php?action=get_supplier_history',
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                let options = '<option value="">-- Pilih Supplier Lama --</option>';
+                response.data.forEach(function(s) {
+                    if (s.supplier) {
+                        const safeSupplier = $('<div>').text(s.supplier).html();
+                        options += `<option value="${safeSupplier}">${safeSupplier}</option>`;
+                    }
+                });
+
+                if ($.fn.select2 && $('#supplier_history_select').hasClass('select2-hidden-accessible')) {
+                    $('#supplier_history_select').select2('destroy');
+                }
+
+                $('#supplier_history_select').html(options);
+
+                if ($.fn.select2) {
+                    $('#supplier_history_select').select2({
+                        theme: 'bootstrap-5',
+                        placeholder: 'Cari supplier lama...',
+                        allowClear: true,
+                        width: '100%',
+                        dropdownParent: $('#purchaseModal')
+                    });
+                }
+            }
+        }
+    });
+}
+
+$('#supplier_history_select').on('change', function() {
+    const val = ($(this).val() || '').trim();
+    if (val !== '') {
+        $('#supplier').val(val);
+    }
+});
 
 // Load semua purchase
 function loadPurchases() {
@@ -368,27 +436,17 @@ function displayPurchases(purchases) {
                         <button class="btn btn-info btn-sm" onclick="viewDetail(${p.id})" title="Detail">
                             <i class="fas fa-eye"></i>
                         </button>
-                        ${isOwner && (p.supplier === 'Pending - Akan diisi Owner' || !p.supplier) ? `
-                        <button class="btn btn-warning btn-sm" onclick="editPurchase(${p.id})" title="Isi Supplier & Harga">
-                            <i class="fas fa-edit"></i> Isi Data
-                        </button>
-                        ` : ''}
-                        ${isOwner && p.status === 'Pending Approval' ? `
-                        <button class="btn btn-success btn-sm" onclick="updateStatus(${p.id}, 'Approved')" title="Approve">
-                            <i class="fas fa-check"></i> Approve
-                        </button>
-                        ` : ''}
                         ${!isOwner && p.status === 'Pending Approval' ? `
                         <button class="btn btn-danger btn-sm" onclick="deletePurchase(${p.id})" title="Hapus">
                             <i class="fas fa-trash"></i>
                         </button>
                         ` : ''}
-                        ${isOwner && p.status === 'Approved' && p.is_paid === 'Belum Bayar' ? `
+                        ${isOwner && p.status !== 'Refund' && p.is_paid === 'Belum Bayar' ? `
                         <button class="btn btn-primary btn-sm" onclick="openPayModal(${p.id})" title="Tandai Sudah Bayar">
                             <i class="fas fa-money-bill"></i> Bayar
                         </button>
                         ` : ''}
-                        ${isOwner && p.status === 'Approved' ? `
+                        ${isOwner && p.status !== 'Refund' ? `
                         <button class="btn btn-warning btn-sm" onclick="updateStatus(${p.id}, 'Refund')" title="Refund">
                             <i class="fas fa-undo"></i>
                         </button>
@@ -406,6 +464,9 @@ function displayPurchases(purchases) {
 function openAddModal() {
     $('#purchaseForm')[0].reset();
     $('#tanggal').val(new Date().toISOString().split('T')[0]);
+    $('#tax_amount').val(0);
+    $('#supplier').val('');
+    $('#supplier_history_select').val('').trigger('change');
     $('#itemsTableBody').empty();
     itemCounter = 0;
     addItemRow();
@@ -418,20 +479,7 @@ function addItemRow() {
     spareparts.forEach(function(sp) {
         options += `<option value="${sp.id}" data-price="${sp.harga_beli_default}" data-satuan="${sp.satuan}">${sp.nama} (${sp.satuan}) - Stock: ${sp.current_stock}</option>`;
     });
-    
-    let priceColumn = isOwner 
-        ? `<td>
-                <input type="number" step="0.01" class="form-control item-price" name="items[${itemCounter}][harga_beli]" min="0" value="0" required onchange="calculateSubtotal(${itemCounter})">
-            </td>
-            <td>
-                <strong class="item-subtotal">Rp 0</strong>
-            </td>`
-        : `<td class="price-column">
-                <input type="number" step="0.01" class="form-control item-price" name="items[${itemCounter}][harga_beli]" min="0" value="0" readonly>
-            </td>
-            <td class="price-column">
-                <strong class="item-subtotal">Rp 0</strong>
-            </td>`;
+    const priceInput = `<input type="number" step="0.01" class="form-control item-price" min="0" value="0" required autocomplete="off" oninput="calculateSubtotal(${itemCounter})">`;
     
     let html = `
         <tr id="row${itemCounter}" data-counter="${itemCounter}">
@@ -441,9 +489,17 @@ function addItemRow() {
                 </select>
             </td>
             <td>
-                <input type="number" class="form-control item-qty" min="1" value="1" required onchange="calculateSubtotal(${itemCounter})">
+                <input type="number" class="form-control item-qty" min="1" value="1" required autocomplete="off" oninput="calculateSubtotal(${itemCounter})">
             </td>
-            ${priceColumn}
+            <td class="price-column">
+                ${priceInput}
+            </td>
+            <td>
+                <input type="number" step="0.01" class="form-control item-discount" min="0" value="0" autocomplete="off" oninput="calculateSubtotal(${itemCounter})" placeholder="0">
+            </td>
+            <td class="price-column">
+                <strong class="item-subtotal" data-value="0">Rp 0</strong>
+            </td>
             <td>
                 <button type="button" class="btn btn-danger btn-sm" onclick="removeItemRow(${itemCounter})">
                     <i class="fas fa-trash"></i>
@@ -461,6 +517,10 @@ function updatePrice(rowId) {
     let select = $(`#row${rowId} .sparepart-select`);
     let price = select.find(':selected').data('price') || 0;
     $(`#row${rowId} .item-price`).val(price);
+    const discountInput = $(`#row${rowId} .item-discount`);
+    if (String(discountInput.val()).trim() === '') {
+        discountInput.val('0');
+    }
     calculateSubtotal(rowId);
 }
 
@@ -468,19 +528,35 @@ function updatePrice(rowId) {
 function calculateSubtotal(rowId) {
     let qty = parseFloat($(`#row${rowId} .item-qty`).val()) || 0;
     let price = parseFloat($(`#row${rowId} .item-price`).val()) || 0;
-    let subtotal = qty * price;
+    let baseTotal = qty * price;
+    const discountField = $(`#row${rowId} .item-discount`);
+    let discount = parseFloat(discountField.val()) || 0;
+
+    if (discount < 0) {
+        discount = 0;
+    }
+    if (discount > baseTotal) {
+        discount = baseTotal;
+        discountField.val(discount.toFixed(2));
+    }
+    if (String(discountField.val()).trim() === '') {
+        discountField.val('0');
+    }
+
+    let subtotal = baseTotal - discount;
     
-    $(`#row${rowId} .item-subtotal`).text('Rp ' + formatNumber(subtotal));
+    $(`#row${rowId} .item-subtotal`).text('Rp ' + formatNumber(subtotal)).attr('data-value', subtotal);
     calculateGrandTotal();
 }
 
 // Hitung grand total
 function calculateGrandTotal() {
-    let total = 0;
+    let subtotalItems = 0;
     $('.item-subtotal').each(function() {
-        let text = $(this).text().replace('Rp ', '').replace(/,/g, '');
-        total += parseFloat(text) || 0;
+        subtotalItems += parseFloat($(this).attr('data-value')) || 0;
     });
+    const taxAmount = parseFloat($('#tax_amount').val()) || 0;
+    const total = subtotalItems + Math.max(0, taxAmount);
     $('#grandTotal').text('Rp ' + formatNumber(total));
 }
 
@@ -502,12 +578,14 @@ $('#purchaseForm').on('submit', function(e) {
         let sparepartId = row.find('.sparepart-select').val();
         let qty = row.find('.item-qty').val();
         let price = row.find('.item-price').val();
+        let discount = row.find('.item-discount').val();
         
-        if (sparepartId && qty && price) {
+        if (sparepartId && qty) {
             items.push({
                 sparepart_id: parseInt(sparepartId),
                 qty: parseInt(qty),
-                harga_beli: parseFloat(price)
+                harga_beli: parseFloat(price || 0),
+                discount_amount: parseFloat(discount || 0)
             });
         }
     });
@@ -519,6 +597,7 @@ $('#purchaseForm').on('submit', function(e) {
     
     let formData = new FormData(this);
     formData.append('items', JSON.stringify(items));
+    formData.set('tax_amount', $('#tax_amount').val() || '0');
     
     $.ajax({
         url: 'backend.php',
@@ -554,7 +633,8 @@ function viewDetail(id) {
                 let statusBadge = p.status === 'Approved' ? 'success' : (p.status === 'Refund' ? 'danger' : 'warning');
                 
                 let itemsHtml = '';
-                let total = 0;
+                let subtotalItems = 0;
+                let taxAmount = parseFloat(p.tax_amount || 0);
                 p.items.forEach(function(item) {
                     if (isOwner) {
                         itemsHtml += `
@@ -562,6 +642,7 @@ function viewDetail(id) {
                                 <td>${item.sparepart_name}</td>
                                 <td>${item.qty} ${item.satuan}</td>
                                 <td>Rp ${formatNumber(item.harga_beli)}</td>
+                                <td>Rp ${formatNumber(item.discount_amount || 0)}</td>
                                 <td>Rp ${formatNumber(item.subtotal)}</td>
                             </tr>
                         `;
@@ -573,7 +654,7 @@ function viewDetail(id) {
                             </tr>
                         `;
                     }
-                    total += parseFloat(item.subtotal);
+                    subtotalItems += parseFloat(item.subtotal);
                 });
                 
                 let tableHeader = isOwner 
@@ -581,6 +662,7 @@ function viewDetail(id) {
                         <th>Sparepart</th>
                         <th>Qty</th>
                         <th>Harga</th>
+                        <th>Diskon</th>
                         <th>Subtotal</th>
                     </tr>`
                     : `<tr>
@@ -591,8 +673,16 @@ function viewDetail(id) {
                 let tableFooter = isOwner 
                     ? `<tfoot>
                         <tr>
-                            <td colspan="3" class="text-end"><strong>TOTAL:</strong></td>
-                            <td><strong>Rp ${formatNumber(total)}</strong></td>
+                            <td colspan="4" class="text-end"><strong>Subtotal Item:</strong></td>
+                            <td><strong>Rp ${formatNumber(subtotalItems)}</strong></td>
+                        </tr>
+                        <tr>
+                            <td colspan="4" class="text-end"><strong>Pajak:</strong></td>
+                            <td><strong>Rp ${formatNumber(taxAmount)}</strong></td>
+                        </tr>
+                        <tr>
+                            <td colspan="4" class="text-end"><strong>TOTAL + PAJAK:</strong></td>
+                            <td><strong>Rp ${formatNumber(subtotalItems + taxAmount)}</strong></td>
                         </tr>
                     </tfoot>`
                     : '';
@@ -709,11 +799,9 @@ $('#editPurchaseForm').on('submit', function(e) {
     });
 });
 
-// Update status (Approve/Refund)
+// Update status (Refund)
 function updateStatus(id, status) {
-    let confirmMsg = status === 'Approved' 
-        ? 'Approve purchase ini? Stock sparepart akan otomatis bertambah.' 
-        : 'Refund purchase ini? Stock sparepart akan dikurangi kembali.';
+    const confirmMsg = 'Refund purchase ini? Stock sparepart akan dikurangi kembali.';
     
     if (confirm(confirmMsg)) {
         $.ajax({
