@@ -97,11 +97,11 @@ if (file_exists($logo_path)) {
 $mpdf = new \Mpdf\Mpdf([
     'mode' => 'utf-8',
     'format' => 'A4',
-    'margin_top' => 10,
-    'margin_bottom' => 15,
-    'margin_left' => 10,
-    'margin_right' => 10,
-    'margin_header' => 5,
+    'margin_top' => 6,
+    'margin_bottom' => 12,
+    'margin_left' => 9,
+    'margin_right' => 9,
+    'margin_header' => 3,
     'margin_footer' => 8
 ]);
 
@@ -124,45 +124,45 @@ ob_start();
         body {
             font-family: Arial, sans-serif;
             font-size: 10px;
-            margin: 10px;
+            margin: 0;
         }
         .header {
-    margin-bottom: 10px;
+    margin: 0 0 6px 0;
     border-bottom: 2px solid #000;
-    padding-bottom: 8px;
+    padding-bottom: 4px;
     width: 100%;
     overflow: hidden;
 }
 
 .header-left {
     float: right;
-    width: 70%;
+    width: 74%;
     text-align: right;
 }
 
 .header-right {
     float: left;
-    width: 30%;
+    width: 26%;
 }
 
 .header-right img {
-    width: 70px; /* Logo diperkecil */
+    width: 58px;
     height: auto;
 }
-        .header-content p {
-            margin: 1px 0;
-            font-size: 9px;
-            line-height: 1.3;
+        .header-left p {
+            margin: 0 0 1px 0;
+            font-size: 8px;
+            line-height: 1.15;
         }
         .info-section {
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
         .info-section table {
             width: 100%;
         }
         .info-section td {
             padding: 2px 0;
-            font-size: 9px;
+            font-size: 8.5px;
         }
         .items-table {
             width: 100%;

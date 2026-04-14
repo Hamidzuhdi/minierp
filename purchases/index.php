@@ -262,6 +262,8 @@ let itemCounter = 0;
 let financeAccounts = [];
 const userRole = '<?php echo $_SESSION['role'] ?? 'Admin'; ?>';
 const isOwner = (userRole === 'Owner');
+const PURCHASE_DRAFT_KEY = 'draft_purchase_form_v1';
+let isPurchaseDraftHydrating = false;
 
 // Load data saat halaman dimuat
 $(document).ready(function() {
@@ -294,6 +296,11 @@ $(document).ready(function() {
         const payDate = $('#pay_date').val();
         const note = $('#pay_note').val();
         updatePayment(id, 'Sudah Bayar', accountCode, payDate, note);
+    });
+
+    // Autosave draft purchase form (including dynamic item rows)
+    $('#purchaseForm').on('input change', '#supplier, #tanggal, #tax_amount, .sparepart-select, .item-qty, .item-price, .item-discount', function() {
+        savePurchaseDraft();
     });
 });
 
@@ -366,6 +373,7 @@ $('#supplier_history_select').on('change', function() {
     const val = ($(this).val() || '').trim();
     if (val !== '') {
         $('#supplier').val(val);
+        savePurchaseDraft();
     }
 });
 
@@ -462,14 +470,20 @@ function displayPurchases(purchases) {
 
 // Buka modal untuk tambah purchase
 function openAddModal() {
-    $('#purchaseForm')[0].reset();
-    $('#tanggal').val(new Date().toISOString().split('T')[0]);
-    $('#tax_amount').val(0);
-    $('#supplier').val('');
-    $('#supplier_history_select').val('').trigger('change');
-    $('#itemsTableBody').empty();
-    itemCounter = 0;
-    addItemRow();
+    isPurchaseDraftHydrating = true;
+    try {
+        $('#purchaseForm')[0].reset();
+        $('#tanggal').val(new Date().toISOString().split('T')[0]);
+        $('#tax_amount').val(0);
+        $('#supplier').val('');
+        $('#supplier_history_select').val('').trigger('change');
+        $('#itemsTableBody').empty();
+        itemCounter = 0;
+        addItemRow();
+        tryRestorePurchaseDraft();
+    } finally {
+        isPurchaseDraftHydrating = false;
+    }
 }
 
 // Tambah baris item
@@ -510,6 +524,7 @@ function addItemRow() {
     
     $('#itemsTableBody').append(html);
     itemCounter++;
+    savePurchaseDraft();
 }
 
 // Update harga saat sparepart dipilih
@@ -522,6 +537,7 @@ function updatePrice(rowId) {
         discountInput.val('0');
     }
     calculateSubtotal(rowId);
+    savePurchaseDraft();
 }
 
 // Hitung subtotal per item
@@ -547,6 +563,7 @@ function calculateSubtotal(rowId) {
     
     $(`#row${rowId} .item-subtotal`).text('Rp ' + formatNumber(subtotal)).attr('data-value', subtotal);
     calculateGrandTotal();
+    savePurchaseDraft();
 }
 
 // Hitung grand total
@@ -564,6 +581,7 @@ function calculateGrandTotal() {
 function removeItemRow(rowId) {
     $(`#row${rowId}`).remove();
     calculateGrandTotal();
+    savePurchaseDraft();
 }
 
 // Submit form purchase
@@ -608,6 +626,7 @@ $('#purchaseForm').on('submit', function(e) {
         dataType: 'json',
         success: function(response) {
             if (response.success) {
+                clearPurchaseDraft();
                 showAlert('success', response.message);
                 $('#purchaseModal').modal('hide');
                 loadPurchases();
@@ -883,6 +902,96 @@ function deletePurchase(id) {
             }
         });
     }
+}
+
+function buildPurchaseDraftPayload() {
+    let items = [];
+    $('#itemsTableBody tr').each(function() {
+        const row = $(this);
+        items.push({
+            sparepart_id: row.find('.sparepart-select').val() || '',
+            qty: row.find('.item-qty').val() || '1',
+            harga_beli: row.find('.item-price').val() || '0',
+            discount_amount: row.find('.item-discount').val() || '0'
+        });
+    });
+
+    return {
+        supplier: $('#supplier').val() || '',
+        tanggal: $('#tanggal').val() || '',
+        tax_amount: $('#tax_amount').val() || '0',
+        items: items,
+        saved_at: Date.now()
+    };
+}
+
+function savePurchaseDraft() {
+    if (isPurchaseDraftHydrating) {
+        return;
+    }
+
+    try {
+        const payload = buildPurchaseDraftPayload();
+        localStorage.setItem(PURCHASE_DRAFT_KEY, JSON.stringify(payload));
+    } catch (e) {
+        console.warn('Gagal menyimpan draft purchase:', e);
+    }
+}
+
+function loadPurchaseDraft() {
+    try {
+        const raw = localStorage.getItem(PURCHASE_DRAFT_KEY);
+        if (!raw) {
+            return null;
+        }
+        return JSON.parse(raw);
+    } catch (e) {
+        console.warn('Gagal membaca draft purchase:', e);
+        return null;
+    }
+}
+
+function clearPurchaseDraft() {
+    localStorage.removeItem(PURCHASE_DRAFT_KEY);
+}
+
+function tryRestorePurchaseDraft() {
+    const draft = loadPurchaseDraft();
+    if (!draft || typeof draft !== 'object') {
+        return;
+    }
+
+    if (draft.supplier) {
+        $('#supplier').val(draft.supplier);
+    }
+    if (draft.tanggal) {
+        $('#tanggal').val(draft.tanggal);
+    }
+    $('#tax_amount').val(draft.tax_amount || '0');
+
+    const items = Array.isArray(draft.items) ? draft.items : [];
+    if (items.length > 0) {
+        $('#itemsTableBody').empty();
+        itemCounter = 0;
+
+        items.forEach(function(item) {
+            addItemRow();
+            const row = $('#itemsTableBody tr').last();
+            const rowCounter = row.data('counter');
+
+            row.find('.sparepart-select').val(item.sparepart_id || '');
+            row.find('.item-qty').val(item.qty || '1');
+            row.find('.item-price').val(item.harga_beli || '0');
+            row.find('.item-discount').val(item.discount_amount || '0');
+
+            if (rowCounter !== undefined) {
+                calculateSubtotal(rowCounter);
+            }
+        });
+    }
+
+    calculateGrandTotal();
+    showAlert('info', 'Draft purchase terakhir dipulihkan.');
 }
 
 // Helper functions
