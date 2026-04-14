@@ -62,6 +62,12 @@ if (!$kilometer_col_res || mysqli_num_rows($kilometer_col_res) === 0) {
     @mysqli_query($conn, "ALTER TABLE spk ADD COLUMN kilometer INT UNSIGNED NULL AFTER vehicle_id");
 }
 
+// Ensure nama_mekanik column exists for SPK mechanic info.
+$mekanik_col_res = mysqli_query($conn, "SHOW COLUMNS FROM spk LIKE 'nama_mekanik'");
+if (!$mekanik_col_res || mysqli_num_rows($mekanik_col_res) === 0) {
+    @mysqli_query($conn, "ALTER TABLE spk ADD COLUMN nama_mekanik VARCHAR(100) NULL AFTER analisa_mekanik");
+}
+
 // CREATE - Buat SPK Baru
 if ($action === 'create') {
     $customer_id = (int)($_POST['customer_id'] ?? 0);
@@ -148,7 +154,7 @@ elseif ($action === 'read') {
     if (!empty($discount_flow)) {
         $discount_flow = mysqli_real_escape_string($conn, $discount_flow);
         if ($discount_flow === 'attention') {
-            $conditions[] = "LOWER(COALESCE(s.discount_status, 'none')) IN ('pending', 'revision')";
+            $conditions[] = "LOWER(COALESCE(s.discount_status, 'none')) = 'pending'";
         } elseif ($discount_flow === 'has_request') {
             $conditions[] = "COALESCE(s.discount_amount_requested, 0) > 0";
         }
@@ -333,10 +339,16 @@ elseif ($action === 'get_all_vehicles') {
 elseif ($action === 'update_analisa') {
     $id = (int)$_POST['id'];
     $analisa_mekanik = trim($_POST['analisa_mekanik']);
+    $nama_mekanik = trim((string)($_POST['nama_mekanik'] ?? ''));
     $service_description = trim($_POST['service_description']);
     $saran_service = trim($_POST['saran_service']);
     $kilometer_raw = trim((string)($_POST['kilometer'] ?? ''));
     $kilometer_normalized = str_replace(['.', ',', ' '], '', $kilometer_raw);
+
+    if ($nama_mekanik === '') {
+        echo json_encode(['success' => false, 'message' => 'Nama mekanik wajib diisi']);
+        exit;
+    }
 
     if ($kilometer_normalized === '' || !ctype_digit($kilometer_normalized)) {
         echo json_encode(['success' => false, 'message' => 'Kilometer wajib diisi angka']);
@@ -351,6 +363,7 @@ elseif ($action === 'update_analisa') {
     
     $sql = "UPDATE spk SET 
             analisa_mekanik = '" . mysqli_real_escape_string($conn, $analisa_mekanik) . "',
+            nama_mekanik = '" . mysqli_real_escape_string($conn, $nama_mekanik) . "',
             service_description = '" . mysqli_real_escape_string($conn, $service_description) . "',
             saran_service = '" . mysqli_real_escape_string($conn, $saran_service) . "',
             kilometer = $kilometer
@@ -365,14 +378,13 @@ elseif ($action === 'update_analisa') {
 
 // SUBMIT DISCOUNT REQUEST (Admin)
 elseif ($action === 'submit_discount') {
-    if (!in_array($currentUserRole, ['Admin', 'Owner'], true)) {
+    if ($currentUserRole !== 'Admin') {
         echo json_encode(['success' => false, 'message' => 'Role Anda tidak memiliki akses flow diskon']);
         exit;
     }
 
     $id = (int)($_POST['id'] ?? 0);
     $discountAmount = (float)($_POST['discount_amount_requested'] ?? 0);
-    $discountReason = trim((string)($_POST['discount_reason'] ?? ''));
 
     if ($id <= 0) {
         echo json_encode(['success' => false, 'message' => 'SPK tidak valid']);
@@ -381,11 +393,6 @@ elseif ($action === 'submit_discount') {
 
     if ($discountAmount <= 0) {
         echo json_encode(['success' => false, 'message' => 'Nominal diskon harus lebih dari 0']);
-        exit;
-    }
-
-    if ($currentUserRole === 'Admin' && $discountReason === '') {
-        echo json_encode(['success' => false, 'message' => 'Alasan diskon wajib diisi']);
         exit;
     }
 
@@ -406,72 +413,13 @@ elseif ($action === 'submit_discount') {
         exit;
     }
 
-    $reasonEsc = mysqli_real_escape_string($conn, $discountReason);
-
     mysqli_begin_transaction($conn);
     try {
-        // Owner can input discount and directly auto-approve in one step.
-        if ($currentUserRole === 'Owner') {
-            $account = finance_get_account_by_code($conn, 'cash');
-            if (!$account) {
-                throw new Exception('Akun kas tidak ditemukan');
-            }
-
-            $tx = finance_add_transaction(
-                $conn,
-                date('Y-m-d'),
-                (int)$account['id'],
-                'out',
-                'EXP-SALES-DISCOUNT',
-                $discountAmount,
-                'operational',
-                $id,
-                'Sales discount SPK #' . ($spk['kode_unik_reference'] ?? $id),
-                $currentUserId,
-                'approved'
-            );
-            if (!$tx['success']) {
-                throw new Exception($tx['message']);
-            }
-
-            $txId = (int)($tx['transaction_id'] ?? 0);
-            if ($txId <= 0) {
-                throw new Exception('ID transaksi keuangan tidak valid saat auto-approve owner');
-            }
-
-            $ownerNoteAuto = $discountReason !== '' ? $discountReason : 'Auto-approve oleh Owner';
-            $ownerNoteAutoEsc = mysqli_real_escape_string($conn, $ownerNoteAuto);
-
-            $sqlUpdate = "UPDATE spk
-                          SET discount_amount_requested = $discountAmount,
-                              discount_amount_approved = $discountAmount,
-                              discount_status = 'approved',
-                              discount_reason = '$reasonEsc',
-                              discount_owner_note = '$ownerNoteAutoEsc',
-                              discount_requested_by = $currentUserId,
-                              discount_requested_at = NOW(),
-                              discount_reviewed_by = $currentUserId,
-                              discount_reviewed_at = NOW(),
-                              discount_finance_tx_id = $txId
-                          WHERE id = $id";
-            if (!mysqli_query($conn, $sqlUpdate)) {
-                throw new Exception('Gagal menyimpan auto-approve diskon owner: ' . mysqli_error($conn));
-            }
-
-            if (!spk_insert_discount_history($conn, $id, 'approve', $discountAmount, $discountAmount, $ownerNoteAuto, $currentUserId, $currentUserRole)) {
-                throw new Exception('Gagal menyimpan histori auto-approve owner: ' . mysqli_error($conn));
-            }
-
-            mysqli_commit($conn);
-            echo json_encode(['success' => true, 'message' => 'Diskon langsung di-ACC Owner dan tercatat di keuangan']);
-            exit;
-        }
-
         $sqlUpdate = "UPDATE spk
                       SET discount_amount_requested = $discountAmount,
                           discount_amount_approved = 0,
                           discount_status = 'pending',
-                          discount_reason = '$reasonEsc',
+                          discount_reason = NULL,
                           discount_owner_note = NULL,
                           discount_requested_by = $currentUserId,
                           discount_requested_at = NOW(),
@@ -483,7 +431,7 @@ elseif ($action === 'submit_discount') {
         }
 
         $historyAction = (($spk['discount_status'] ?? 'none') === 'none') ? 'submit' : 'resubmit';
-        if (!spk_insert_discount_history($conn, $id, $historyAction, $discountAmount, 0, $discountReason, $currentUserId, $currentUserRole)) {
+        if (!spk_insert_discount_history($conn, $id, $historyAction, $discountAmount, 0, null, $currentUserId, $currentUserRole)) {
             throw new Exception('Gagal menyimpan histori diskon: ' . mysqli_error($conn));
         }
 
@@ -504,16 +452,13 @@ elseif ($action === 'review_discount') {
 
     $id = (int)($_POST['id'] ?? 0);
     $decision = trim((string)($_POST['decision'] ?? ''));
-    $ownerNote = trim((string)($_POST['discount_owner_note'] ?? ''));
-    $approvedAmountRaw = $_POST['discount_amount_approved'] ?? ($_POST['discount_amount_requested'] ?? null);
-    $approvedAmountInput = is_numeric($approvedAmountRaw) ? (float)$approvedAmountRaw : 0;
 
     if ($id <= 0) {
         echo json_encode(['success' => false, 'message' => 'SPK tidak valid']);
         exit;
     }
 
-    if (!in_array($decision, ['approve', 'revision', 'reject'], true)) {
+    if (!in_array($decision, ['approve', 'reject'], true)) {
         echo json_encode(['success' => false, 'message' => 'Keputusan review tidak valid']);
         exit;
     }
@@ -537,22 +482,11 @@ elseif ($action === 'review_discount') {
         echo json_encode(['success' => false, 'message' => 'Nominal pengajuan diskon tidak valid']);
         exit;
     }
-
-    $approvedAmount = $approvedAmountInput > 0 ? $approvedAmountInput : $requestedAmount;
-    if ($approvedAmount < 0) {
-        echo json_encode(['success' => false, 'message' => 'Nominal diskon disetujui tidak valid']);
-        exit;
-    }
-
-    $ownerNoteEsc = mysqli_real_escape_string($conn, $ownerNote);
+    $approvedAmount = $requestedAmount;
 
     mysqli_begin_transaction($conn);
     try {
         if ($decision === 'approve') {
-            if ($approvedAmount <= 0) {
-                throw new Exception('Nominal diskon approved harus lebih dari 0');
-            }
-
             if ((int)($spk['discount_finance_tx_id'] ?? 0) > 0) {
                 throw new Exception('Diskon SPK ini sudah pernah diposting ke keuangan');
             }
@@ -585,9 +519,9 @@ elseif ($action === 'review_discount') {
             }
             $sqlUpdate = "UPDATE spk
                           SET discount_status = 'approved',
-                              discount_amount_requested = $approvedAmount,
+                              discount_amount_requested = $requestedAmount,
                               discount_amount_approved = $approvedAmount,
-                              discount_owner_note = '$ownerNoteEsc',
+                              discount_owner_note = NULL,
                               discount_reviewed_by = $currentUserId,
                               discount_reviewed_at = NOW(),
                               discount_finance_tx_id = $txId
@@ -596,7 +530,7 @@ elseif ($action === 'review_discount') {
                 throw new Exception('Gagal menyimpan approval diskon: ' . mysqli_error($conn));
             }
 
-            if (!spk_insert_discount_history($conn, $id, 'approve', $requestedAmount, $approvedAmount, $ownerNote, $currentUserId, $currentUserRole)) {
+            if (!spk_insert_discount_history($conn, $id, 'approve', $requestedAmount, $approvedAmount, null, $currentUserId, $currentUserRole)) {
                 throw new Exception('Gagal menyimpan histori approval: ' . mysqli_error($conn));
             }
 
@@ -605,33 +539,10 @@ elseif ($action === 'review_discount') {
             exit;
         }
 
-        if ($decision === 'revision') {
-            $suggestedAmount = $approvedAmount;
-            $sqlUpdate = "UPDATE spk
-                          SET discount_status = 'revision',
-                              discount_amount_requested = $suggestedAmount,
-                              discount_amount_approved = $suggestedAmount,
-                              discount_owner_note = '$ownerNoteEsc',
-                              discount_reviewed_by = $currentUserId,
-                              discount_reviewed_at = NOW()
-                          WHERE id = $id";
-            if (!mysqli_query($conn, $sqlUpdate)) {
-                throw new Exception('Gagal menyimpan status revisi diskon: ' . mysqli_error($conn));
-            }
-
-            if (!spk_insert_discount_history($conn, $id, 'revision', $requestedAmount, $suggestedAmount, $ownerNote, $currentUserId, $currentUserRole)) {
-                throw new Exception('Gagal menyimpan histori revisi: ' . mysqli_error($conn));
-            }
-
-            mysqli_commit($conn);
-            echo json_encode(['success' => true, 'message' => 'Permintaan revisi diskon berhasil dikirim ke Admin']);
-            exit;
-        }
-
         $sqlUpdate = "UPDATE spk
                       SET discount_status = 'rejected',
                           discount_amount_approved = 0,
-                          discount_owner_note = '$ownerNoteEsc',
+                          discount_owner_note = NULL,
                           discount_reviewed_by = $currentUserId,
                           discount_reviewed_at = NOW()
                       WHERE id = $id";
@@ -639,7 +550,7 @@ elseif ($action === 'review_discount') {
             throw new Exception('Gagal menolak diskon: ' . mysqli_error($conn));
         }
 
-        if (!spk_insert_discount_history($conn, $id, 'reject', $requestedAmount, 0, $ownerNote, $currentUserId, $currentUserRole)) {
+        if (!spk_insert_discount_history($conn, $id, 'reject', $requestedAmount, 0, null, $currentUserId, $currentUserRole)) {
             throw new Exception('Gagal menyimpan histori penolakan: ' . mysqli_error($conn));
         }
 

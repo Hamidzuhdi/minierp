@@ -81,7 +81,7 @@ $is_owner = ($user_role === 'Owner');
                         <div class="col-md-3">
                             <select class="form-select" id="discountFlowFilter">
                                 <option value="">Semua Flow Diskon</option>
-                                <option value="attention">Diskon Pending/Revisi Owner</option>
+                                <option value="attention">Diskon Pending Owner</option>
                                 <option value="has_request">Ada Pengajuan Diskon Admin</option>
                             </select>
                         </div>
@@ -188,183 +188,174 @@ $is_owner = ($user_role === 'Owner');
                     <input type="hidden" id="analisa_spk_id" name="id">
                     <input type="hidden" name="action" value="update_analisa">
                     
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="analisa_mekanik" class="form-label">Analisa Mekanik</label>
-                                <textarea class="form-control" id="analisa_mekanik" name="analisa_mekanik" rows="3" placeholder="Hasil pemeriksaan dan diagnosa..."></textarea>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="service_description" class="form-label">Deskripsi Service</label>
-                                <textarea class="form-control" id="service_description" name="service_description" rows="3" placeholder="Pekerjaan yang akan dilakukan..."></textarea>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="saran_service" class="form-label">Saran Service</label>
-                                <textarea class="form-control" id="saran_service" name="saran_service" rows="2" placeholder="Saran untuk customer..."></textarea>
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="kilometer" class="form-label">Kilometer Kendaraan *</label>
-                                <input type="text" class="form-control" id="kilometer" name="kilometer" inputmode="numeric" autocomplete="off" required placeholder="Contoh: 125.000">
-                                <small class="text-muted">Isi kilometer/odometer saat kendaraan masuk bengkel.</small>
+                    <h6>Jasa Service</h6>
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <select class="form-select form-select-sm" id="service_select">
+                                        <option value="">Pilih Jasa...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <input type="number" class="form-control form-control-sm" id="service_qty" value="1" min="1" placeholder="Qty">
+                                </div>
+                                <div class="col-md-3">
+                                    <button type="button" class="btn btn-primary btn-sm w-100" onclick="addServiceToSPK()">
+                                        <i class="fas fa-plus"></i> Tambah
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                        
+                    </div>
+
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Jasa</th>
+                                <th>Qty</th>
+                                <th>Harga</th>
+                                <th>Subtotal</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="serviceListTable">
+                            <tr><td colspan="5" class="text-center text-muted">Belum ada jasa</td></tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="3">Total Biaya Jasa:</th>
+                                <th colspan="2" id="totalServiceCost">Rp 0</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                    <h6 class="mt-4">Sparepart</h6>
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <select class="form-select form-select-sm" id="sparepart_select">
+                                        <option value="">Pilih Sparepart...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <input type="number" class="form-control form-control-sm" id="sparepart_qty" value="1" min="1" placeholder="Qty">
+                                </div>
+                                <div class="col-md-3">
+                                    <button type="button" class="btn btn-success btn-sm w-100" onclick="addSparepartToSPK()">
+                                        <i class="fas fa-plus"></i> Tambah
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Sparepart</th>
+                                <th>Qty</th>
+                                <th>Harga</th>
+                                <th>Subtotal</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sparepartListTable">
+                            <tr><td colspan="5" class="text-center text-muted">Belum ada sparepart</td></tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="3">Total Biaya Sparepart:</th>
+                                <th colspan="2" id="totalSparepartCost">Rp 0</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                    <div class="mb-3 mt-4">
+                        <label for="service_description" class="form-label">Deskripsi Service</label>
+                        <textarea class="form-control" id="service_description" name="service_description" rows="3" placeholder="Pekerjaan yang akan dilakukan..."></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="saran_service" class="form-label">Saran Service</label>
+                        <textarea class="form-control" id="saran_service" name="saran_service" rows="2" placeholder="Saran untuk customer..."></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="analisa_mekanik" class="form-label">Analisa Mekanik</label>
+                        <textarea class="form-control" id="analisa_mekanik" name="analisa_mekanik" rows="3" placeholder="Hasil pemeriksaan dan diagnosa..."></textarea>
+                    </div>
+
+                    <div class="row g-3 mb-3">
                         <div class="col-md-6">
-                            <h6>Jasa Service</h6>
-                            <div class="card mb-3">
-                                <div class="card-body">
-                                    <div class="row g-2">
-                                        <div class="col-md-6">
-                                            <select class="form-select form-select-sm" id="service_select">
-                                                <option value="">Pilih Jasa...</option>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <input type="number" class="form-control form-control-sm" id="service_qty" value="1" min="1" placeholder="Qty">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <button type="button" class="btn btn-primary btn-sm w-100" onclick="addServiceToSPK()">
-                                                <i class="fas fa-plus"></i> Tambah
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <table class="table table-sm table-bordered">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Jasa</th>
-                                        <th>Qty</th>
-                                        <th>Harga</th>
-                                        <th>Subtotal</th>
-                                        <th>Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="serviceListTable">
-                                    <tr><td colspan="5" class="text-center text-muted">Belum ada jasa</td></tr>
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <th colspan="3">Total Biaya Jasa:</th>
-                                        <th colspan="2" id="totalServiceCost">Rp 0</th>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                            
-                            <h6 class="mt-4">Sparepart</h6>
-                            <div class="card mb-3">
-                                <div class="card-body">
-                                    <div class="row g-2">
-                                        <div class="col-md-6">
-                                            <select class="form-select form-select-sm" id="sparepart_select">
-                                                <option value="">Pilih Sparepart...</option>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <input type="number" class="form-control form-control-sm" id="sparepart_qty" value="1" min="1" placeholder="Qty">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <button type="button" class="btn btn-success btn-sm w-100" onclick="addSparepartToSPK()">
-                                                <i class="fas fa-plus"></i> Tambah
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <table class="table table-sm table-bordered">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Sparepart</th>
-                                        <th>Qty</th>
-                                        <th>Harga</th>
-                                        <th>Subtotal</th>
-                                        <th>Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="sparepartListTable">
-                                    <tr><td colspan="5" class="text-center text-muted">Belum ada sparepart</td></tr>
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <th colspan="3">Total Biaya Sparepart:</th>
-                                        <th colspan="2" id="totalSparepartCost">Rp 0</th>
-                                    </tr>
-                                </tfoot>
-                            </table>
+                            <label for="nama_mekanik" class="form-label">Nama Mekanik *</label>
+                            <input type="text" class="form-control" id="nama_mekanik" name="nama_mekanik" maxlength="100" required placeholder="Contoh: Budi Santoso">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="kilometer" class="form-label">Kilometer Kendaraan *</label>
+                            <input type="text" class="form-control" id="kilometer" name="kilometer" inputmode="numeric" autocomplete="off" required placeholder="Contoh: 125.000">
+                            <small class="text-muted">Isi kilometer/odometer saat kendaraan masuk bengkel.</small>
+                        </div>
+                    </div>
 
-                            <div class="alert alert-primary d-flex justify-content-between align-items-center mt-3 mb-0">
-                                <div>
-                                    <strong>Estimasi Biaya (Jasa + Sparepart - Diskon)</strong>
-                                    <div class="small mt-1" id="estimasiBiayaBreakdown">Rp 0 - Rp 0</div>
-                                </div>
-                                <h5 class="mb-0" id="estimasiBiayaTotal">Rp 0</h5>
+                    <div class="alert alert-primary d-flex justify-content-between align-items-center mt-3 mb-0">
+                        <div>
+                            <strong>Estimasi Biaya (Jasa + Sparepart - Diskon)</strong>
+                            <div class="small mt-1" id="estimasiBiayaBreakdown">Rp 0 - Rp 0</div>
+                        </div>
+                        <h5 class="mb-0" id="estimasiBiayaTotal">Rp 0</h5>
+                    </div>
+
+                    <div class="card mt-3">
+                        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                            <strong>Flow Diskon SPK</strong>
+                            <span id="discount_status_badge" class="badge bg-secondary">Diskon: Belum Diajukan</span>
+                        </div>
+                        <div class="card-body">
+                            <h6 class="mb-2">Pengajuan & Review Diskon</h6>
+                            <div class="mb-2 small text-muted">
+                                Requested: <strong id="discount_requested_summary">Rp 0</strong><br>
+                                Approved: <strong id="discount_approved_summary">Rp 0</strong>
                             </div>
+                            <div class="mb-2">
+                                <label for="discount_amount_requested" class="form-label">Nominal Diskon</label>
+                                <input type="number" class="form-control form-control-sm" id="discount_amount_requested" min="0" step="1000" placeholder="Contoh: 50000">
+                            </div>
+                            <div class="d-grid mb-2" id="discount_admin_actions">
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="submitDiscountRequest()">
+                                    <i class="fas fa-paper-plane"></i> Kirim Pengajuan Diskon
+                                </button>
+                            </div>
+                            <div class="d-flex gap-2 flex-wrap" id="discount_owner_actions">
+                                <button type="button" class="btn btn-success btn-sm" onclick="reviewDiscount('approve')">
+                                    <i class="fas fa-check"></i> ACC
+                                </button>
+                                <button type="button" class="btn btn-danger btn-sm" onclick="reviewDiscount('reject')">
+                                    <i class="fas fa-times"></i> Tolak
+                                </button>
+                            </div>
+                            <div class="small text-muted mt-2" id="discount_admin_hint"></div>
+                            <div class="small text-muted" id="discount_owner_hint"></div>
 
-                            <div class="card mt-3">
-                                <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                                    <strong>Flow Diskon SPK</strong>
-                                    <span id="discount_status_badge" class="badge bg-secondary">Diskon: Belum Diajukan</span>
-                                </div>
-                                <div class="card-body">
-                                    <h6 class="mb-2">Pengajuan & Review Diskon</h6>
-                                    <div class="mb-2 small text-muted">
-                                        Requested: <strong id="discount_requested_summary">Rp 0</strong><br>
-                                        Approved: <strong id="discount_approved_summary">Rp 0</strong>
-                                    </div>
-                                    <div class="mb-2">
-                                        <label for="discount_amount_requested" class="form-label">Nominal Diskon</label>
-                                        <input type="number" class="form-control form-control-sm" id="discount_amount_requested" min="0" step="1000" placeholder="Contoh: 50000">
-                                        <div class="small text-muted">Admin isi nominal diskon. Owner bisa langsung ACC/Tolak, atau ubah nominal ini lalu ACC.</div>
-                                    </div>
-                                    <div class="mb-2">
-                                        <label for="discount_reason" class="form-label">Alasan Diskon (Admin)</label>
-                                        <textarea class="form-control form-control-sm" id="discount_reason" rows="2" placeholder="Jelaskan alasan diskon..."></textarea>
-                                    </div>
-                                    <div class="mb-2">
-                                        <label for="discount_owner_note" class="form-label">Catatan Owner</label>
-                                        <textarea class="form-control form-control-sm" id="discount_owner_note" rows="2" placeholder="Catatan ACC/Tolak..."></textarea>
-                                    </div>
-                                    <div class="d-grid mb-2" id="discount_admin_actions">
-                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="submitDiscountRequest()">
-                                            <i class="fas fa-paper-plane"></i> Kirim Pengajuan Diskon
-                                        </button>
-                                    </div>
-                                    <div class="d-flex gap-2 flex-wrap" id="discount_owner_actions">
-                                        <button type="button" class="btn btn-success btn-sm" onclick="reviewDiscount('approve')">
-                                            <i class="fas fa-check"></i> ACC
-                                        </button>
-                                        <button type="button" class="btn btn-danger btn-sm" onclick="reviewDiscount('reject')">
-                                            <i class="fas fa-times"></i> Tolak
-                                        </button>
-                                    </div>
-                                    <div class="small text-muted mt-2" id="discount_admin_hint"></div>
-                                    <div class="small text-muted" id="discount_owner_hint"></div>
-
-                                    <hr>
-                                    <h6 class="mb-2">Riwayat Approval Diskon</h6>
-                                    <div class="table-responsive">
-                                        <table class="table table-sm table-bordered mb-0">
-                                            <thead class="table-light">
-                                                <tr>
-                                                    <th>Waktu</th>
-                                                    <th>Aksi</th>
-                                                    <th>Requested</th>
-                                                    <th>Approved</th>
-                                                    <th>Oleh</th>
-                                                    <th>Catatan</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="discountHistoryTable">
-                                                <tr><td colspan="6" class="text-center text-muted">Belum ada riwayat</td></tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
+                            <hr>
+                            <h6 class="mb-2">Riwayat Approval Diskon</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Waktu</th>
+                                            <th>Aksi</th>
+                                            <th>Requested</th>
+                                            <th>Approved</th>
+                                            <th>Oleh</th>
+                                            <th>Catatan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="discountHistoryTable">
+                                        <tr><td colspan="6" class="text-center text-muted">Belum ada riwayat</td></tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -387,6 +378,7 @@ $is_owner = ($user_role === 'Owner');
 <script>
 const userRole = '<?php echo $_SESSION['role'] ?? 'Admin'; ?>';
 const isOwner = (userRole === 'Owner');
+const SPK_CREATE_DRAFT_KEY = 'draft_spk_create_v1';
 
 $(document).ready(function() {
     loadSPKs();
@@ -407,6 +399,17 @@ $(document).ready(function() {
     $('#discount_amount_requested').on('input', refreshEstimasiBiaya);
     $('#kilometer').on('input', function() {
         this.value = formatKilometerInput(this.value);
+        saveAnalisaDraft();
+    });
+
+    // Autosave draft for SPK create form
+    $('#spkForm').on('input change', '#customer_id, #vehicle_id, #tanggal, #keluhan_customer', function() {
+        saveSpkCreateDraft();
+    });
+
+    // Autosave draft for Analisa form basic fields
+    $('#analisaForm').on('input change', '#analisa_mekanik, #nama_mekanik, #service_description, #saran_service, #kilometer, #discount_amount_requested', function() {
+        saveAnalisaDraft();
     });
     
     // Load vehicles saat customer dipilih
@@ -418,12 +421,14 @@ $(document).ready(function() {
         } else {
             $('#vehicle_id').html('<option value="">-- Pilih Customer Dulu --</option>').prop('disabled', true);
         }
+        saveSpkCreateDraft();
     });
 
     $('#vehicle_id').on('change', function() {
         const selected = $('#vehicle_id option:selected');
         const customerId = selected.data('customer-id') || '';
         $('#customer_id_real').val(customerId);
+        saveSpkCreateDraft();
     });
 
     // Prevent select2 dropdown from leaving modal in a "stuck" state.
@@ -526,7 +531,7 @@ function loadCustomers() {
     });
 }
 
-function loadVehicles(customerIds) {
+function loadVehicles(customerIds, selectedVehicleId = '') {
     $.ajax({
         url: 'backend.php?action=get_vehicles&customer_ids=' + encodeURIComponent(customerIds),
         type: 'GET',
@@ -538,6 +543,13 @@ function loadVehicles(customerIds) {
                     options += `<option value="${v.id}" data-customer-id="${v.customer_id}">${v.nomor_polisi} - ${v.merk} ${v.model || ''}</option>`;
                 });
                 $('#vehicle_id').html(options).prop('disabled', false);
+
+                if (selectedVehicleId) {
+                    $('#vehicle_id').val(String(selectedVehicleId));
+                    const selected = $('#vehicle_id option:selected');
+                    const customerId = selected.data('customer-id') || '';
+                    $('#customer_id_real').val(customerId);
+                }
             }
         }
     });
@@ -554,7 +566,7 @@ function displaySPKs(spks) {
         spks.forEach(function(spk) {
             let statusBadge = getStatusBadge(spk.status_spk);
             let discountBadge = '';
-            let needsDiscountAttention = ['pending', 'revision'].includes((spk.discount_status || '').toLowerCase());
+            let needsDiscountAttention = (spk.discount_status || '').toLowerCase() === 'pending';
             if (spk.discount_status && spk.discount_status !== 'none') {
                 discountBadge = `<div class="mt-1">${getDiscountStatusBadge(spk.discount_status)}</div>`;
             }
@@ -649,7 +661,7 @@ function getDiscountStatusBadge(status) {
         none: ['secondary', 'Diskon: Belum Diajukan'],
         pending: ['warning', 'Diskon: Menunggu ACC Owner'],
         approved: ['success', 'Diskon: Disetujui'],
-        revision: ['info', 'Diskon: Revisi Owner'],
+        revision: ['warning', 'Diskon: Menunggu ACC Owner'],
         rejected: ['danger', 'Diskon: Ditolak']
     };
     const data = labels[status] || labels.none;
@@ -665,6 +677,8 @@ function openAddModal() {
     if ($.fn.select2 && $('#customer_id').hasClass('select2-hidden-accessible')) {
         $('#customer_id').val('').trigger('change');
     }
+
+    tryRestoreSpkCreateDraft();
 }
 
 $('#spkForm').on('submit', function(e) {
@@ -687,6 +701,7 @@ $('#spkForm').on('submit', function(e) {
         dataType: 'json',
         success: function(response) {
             if (response.success) {
+                clearSpkCreateDraft();
                 showAlert('success', response.message + ' - Kode: ' + response.kode_unik);
                 $('#spkModal').modal('hide');
                 loadSPKs();
@@ -716,6 +731,7 @@ function viewDetail(id) {
                                 <tr><th>Status:</th><td>${getStatusBadge(spk.status_spk)}</td></tr>
                                 <tr><th>Customer:</th><td>${spk.customer_name}<br><small>${spk.customer_phone || ''}</small></td></tr>
                                 <tr><th>Kendaraan:</th><td>${spk.nomor_polisi} - ${spk.merk} ${spk.model || ''} (${spk.tahun || '-'})</td></tr>
+                                <tr><th>Nama Mekanik:</th><td>${spk.nama_mekanik || '-'}</td></tr>
                                 <tr><th>Kilometer:</th><td>${(spk.kilometer !== null && spk.kilometer !== '') ? (formatNumber(spk.kilometer) + ' KM') : '-'}</td></tr>
                             </table>
                         </div>
@@ -858,9 +874,11 @@ function openAnalisaModal(id) {
                 refreshEstimasiBiaya();
                 $('#analisa_spk_id').val(spk.id);
                 $('#analisa_mekanik').val(spk.analisa_mekanik || '');
+                $('#nama_mekanik').val(spk.nama_mekanik || '');
                 $('#service_description').val(spk.service_description || '');
                 $('#saran_service').val(spk.saran_service || '');
                 $('#kilometer').val((spk.kilometer !== null && spk.kilometer !== '') ? formatKilometerInput(spk.kilometer) : '');
+                restoreAnalisaDraft(spk.id);
                 renderDiscountSection(spk);
                 loadDiscountHistory(spk.id);
                 
@@ -890,6 +908,8 @@ $('#analisaForm').on('submit', function(e) {
         dataType: 'json',
         success: function(response) {
             if (response.success) {
+                const spkId = parseInt($('#analisa_spk_id').val(), 10) || 0;
+                clearAnalisaDraft(spkId);
                 showAlert('success', response.message);
                 $('#analisaModal').modal('hide');
                 loadSPKs();
@@ -1001,6 +1021,134 @@ function showAlert(type, message) {
     }, 3000);
 }
 
+function buildSpkCreateDraftPayload() {
+    return {
+        customer_group: $('#customer_id').val() || '',
+        customer_id_real: $('#customer_id_real').val() || '',
+        vehicle_id: $('#vehicle_id').val() || '',
+        tanggal: $('#tanggal').val() || '',
+        keluhan_customer: $('#keluhan_customer').val() || '',
+        saved_at: Date.now()
+    };
+}
+
+function saveSpkCreateDraft() {
+    try {
+        const payload = buildSpkCreateDraftPayload();
+        localStorage.setItem(SPK_CREATE_DRAFT_KEY, JSON.stringify(payload));
+    } catch (e) {
+        console.warn('Gagal menyimpan draft SPK:', e);
+    }
+}
+
+function loadSpkCreateDraft() {
+    try {
+        const raw = localStorage.getItem(SPK_CREATE_DRAFT_KEY);
+        if (!raw) {
+            return null;
+        }
+        return JSON.parse(raw);
+    } catch (e) {
+        console.warn('Gagal membaca draft SPK:', e);
+        return null;
+    }
+}
+
+function clearSpkCreateDraft() {
+    localStorage.removeItem(SPK_CREATE_DRAFT_KEY);
+}
+
+function tryRestoreSpkCreateDraft() {
+    const draft = loadSpkCreateDraft();
+    if (!draft || typeof draft !== 'object') {
+        return;
+    }
+
+    if (draft.tanggal) {
+        $('#tanggal').val(draft.tanggal);
+    }
+    if (draft.keluhan_customer) {
+        $('#keluhan_customer').val(draft.keluhan_customer);
+    }
+
+    if (draft.customer_group) {
+        $('#customer_id').val(draft.customer_group).trigger('change');
+        loadVehicles(draft.customer_group, draft.vehicle_id || '');
+    }
+
+    if (draft.customer_id_real) {
+        $('#customer_id_real').val(draft.customer_id_real);
+    }
+
+    showAlert('info', 'Draft SPK terakhir dipulihkan.');
+}
+
+function getAnalisaDraftKey(spkId) {
+    return 'draft_spk_analisa_' + String(spkId || 0);
+}
+
+function saveAnalisaDraft() {
+    const spkId = parseInt($('#analisa_spk_id').val(), 10) || 0;
+    if (spkId <= 0) {
+        return;
+    }
+
+    const payload = {
+        analisa_mekanik: $('#analisa_mekanik').val() || '',
+        nama_mekanik: $('#nama_mekanik').val() || '',
+        service_description: $('#service_description').val() || '',
+        saran_service: $('#saran_service').val() || '',
+        kilometer: $('#kilometer').val() || '',
+        discount_amount_requested: $('#discount_amount_requested').val() || '',
+        saved_at: Date.now()
+    };
+
+    try {
+        localStorage.setItem(getAnalisaDraftKey(spkId), JSON.stringify(payload));
+    } catch (e) {
+        console.warn('Gagal menyimpan draft analisa:', e);
+    }
+}
+
+function restoreAnalisaDraft(spkId) {
+    if (!spkId) {
+        return;
+    }
+
+    try {
+        const raw = localStorage.getItem(getAnalisaDraftKey(spkId));
+        if (!raw) {
+            return;
+        }
+
+        const draft = JSON.parse(raw);
+        if (!draft || typeof draft !== 'object') {
+            return;
+        }
+
+        $('#analisa_mekanik').val(draft.analisa_mekanik || $('#analisa_mekanik').val() || '');
+        $('#nama_mekanik').val(draft.nama_mekanik || $('#nama_mekanik').val() || '');
+        $('#service_description').val(draft.service_description || $('#service_description').val() || '');
+        $('#saran_service').val(draft.saran_service || $('#saran_service').val() || '');
+        $('#kilometer').val(draft.kilometer || $('#kilometer').val() || '');
+        if (draft.discount_amount_requested !== undefined) {
+            $('#discount_amount_requested').val(draft.discount_amount_requested || '');
+        }
+
+        refreshEstimasiBiaya();
+        showAlert('info', 'Draft analisa SPK dipulihkan.');
+    } catch (e) {
+        console.warn('Gagal memulihkan draft analisa:', e);
+    }
+}
+
+function clearAnalisaDraft(spkId) {
+    if (!spkId) {
+        return;
+    }
+    localStorage.removeItem(getAnalisaDraftKey(spkId));
+}
+
 // ========== Service Management Functions ==========
 let servicePricesCache = [];
 let currentServiceTotal = 0;
@@ -1030,7 +1178,7 @@ function renderDiscountSection(spk) {
         none: ['secondary', 'Diskon: Belum Diajukan'],
         pending: ['warning', 'Diskon: Menunggu ACC Owner'],
         approved: ['success', 'Diskon: Disetujui'],
-        revision: ['info', 'Diskon: Revisi Owner'],
+        revision: ['warning', 'Diskon: Menunggu ACC Owner'],
         rejected: ['danger', 'Diskon: Ditolak']
     };
     const badge = badgeMeta[status] || badgeMeta.none;
@@ -1042,32 +1190,20 @@ function renderDiscountSection(spk) {
     $('#discount_requested_summary').text('Rp ' + formatNumber(requestedAmount));
     $('#discount_approved_summary').text('Rp ' + formatNumber(approvedAmount));
     $('#discount_amount_requested').val(requestedAmount > 0 ? requestedAmount : '');
-    $('#discount_reason').val(spk.discount_reason || '');
-    $('#discount_owner_note').val(spk.discount_owner_note || '');
 
-    const canAdminSubmit = !isOwner && ['none', 'revision', 'rejected'].includes(status);
-    const canOwnerDirectSubmit = isOwner && ['none', 'pending', 'revision', 'rejected'].includes(status);
+    const canAdminSubmit = !isOwner && ['none', 'pending', 'revision', 'rejected'].includes(status);
     const canOwnerReview = isOwner && ['pending', 'revision'].includes(status);
 
-    const canSubmitDiscount = canAdminSubmit || canOwnerDirectSubmit;
+    $('#discount_amount_requested').prop('disabled', !canAdminSubmit);
+    $('#discount_admin_actions').toggle(!isOwner);
+    $('#discount_owner_actions').toggle(isOwner);
+    $('#discount_admin_actions button')
+        .prop('disabled', !canAdminSubmit)
+        .html('<i class="fas fa-paper-plane"></i> Kirim Pengajuan Diskon');
+    $('#discount_admin_hint').text(!isOwner && canAdminSubmit ? 'Admin dapat mengajukan atau update nominal diskon untuk menunggu ACC owner.' : '');
 
-    $('#discount_amount_requested').prop('disabled', !(canSubmitDiscount || canOwnerReview));
-    $('#discount_reason').prop('disabled', !canAdminSubmit);
-    if (isOwner) {
-        $('#discount_admin_actions button')
-            .prop('disabled', !canOwnerDirectSubmit)
-            .html('<i class="fas fa-check-double"></i> Simpan Diskon (Auto ACC Owner)');
-        $('#discount_admin_hint').text(canOwnerDirectSubmit ? 'Owner bisa isi nominal lalu langsung auto-approve.' : 'Auto-approve owner tidak aktif untuk status saat ini.');
-    } else {
-        $('#discount_admin_actions button')
-            .prop('disabled', !canAdminSubmit)
-            .html('<i class="fas fa-paper-plane"></i> Kirim Pengajuan Diskon');
-        $('#discount_admin_hint').text(canAdminSubmit ? 'Admin dapat mengajukan atau kirim ulang diskon (menunggu ACC owner).' : 'Pengajuan admin tidak aktif untuk status saat ini.');
-    }
-
-    $('#discount_owner_note').prop('disabled', !canOwnerReview);
     $('#discount_owner_actions button').prop('disabled', !canOwnerReview);
-    $('#discount_owner_hint').text(canOwnerReview ? 'Owner bisa ACC/Tolak pengajuan admin. Bisa juga ubah nominal lalu pakai auto-approve.' : 'Review owner aktif saat status pending/revision.');
+    $('#discount_owner_hint').text(isOwner ? (canOwnerReview ? 'Owner hanya dapat ACC atau Tolak pengajuan diskon.' : 'Review owner aktif saat status pending.') : '');
 
     refreshEstimasiBiaya();
 }
@@ -1091,7 +1227,6 @@ function refreshDiscountSection(spkId) {
 function submitDiscountRequest() {
     const spkId = parseInt($('#analisa_spk_id').val(), 10) || 0;
     const amount = parseFloat($('#discount_amount_requested').val()) || 0;
-    const reason = ($('#discount_reason').val() || '').trim();
 
     if (spkId <= 0) {
         showAlert('danger', 'SPK tidak valid. Tutup modal lalu buka kembali.');
@@ -1099,10 +1234,6 @@ function submitDiscountRequest() {
     }
     if (amount <= 0) {
         showAlert('warning', 'Nominal diskon harus lebih dari 0');
-        return;
-    }
-    if (!isOwner && !reason) {
-        showAlert('warning', 'Alasan diskon wajib diisi');
         return;
     }
 
@@ -1113,8 +1244,7 @@ function submitDiscountRequest() {
         data: {
             action: 'submit_discount',
             id: spkId,
-            discount_amount_requested: amount,
-            discount_reason: reason
+            discount_amount_requested: amount
         },
         success: function(response) {
             if (response.success) {
@@ -1132,8 +1262,6 @@ function submitDiscountRequest() {
 
 function reviewDiscount(decision) {
     const spkId = parseInt($('#analisa_spk_id').val(), 10) || 0;
-    const editedAmount = parseFloat($('#discount_amount_requested').val()) || 0;
-    const ownerNote = ($('#discount_owner_note').val() || '').trim();
 
     if (spkId <= 0) {
         showAlert('danger', 'SPK tidak valid. Tutup modal lalu buka kembali.');
@@ -1152,9 +1280,7 @@ function reviewDiscount(decision) {
         data: {
             action: 'review_discount',
             id: spkId,
-            decision: decision,
-            discount_amount_requested: editedAmount,
-            discount_owner_note: ownerNote
+            decision: decision
         },
         success: function(response) {
             if (response.success) {
