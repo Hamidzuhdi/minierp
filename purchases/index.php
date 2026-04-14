@@ -263,6 +263,7 @@ let financeAccounts = [];
 const userRole = '<?php echo $_SESSION['role'] ?? 'Admin'; ?>';
 const isOwner = (userRole === 'Owner');
 const PURCHASE_DRAFT_KEY = 'draft_purchase_form_v1';
+let isPurchaseDraftHydrating = false;
 
 // Load data saat halaman dimuat
 $(document).ready(function() {
@@ -469,15 +470,20 @@ function displayPurchases(purchases) {
 
 // Buka modal untuk tambah purchase
 function openAddModal() {
-    $('#purchaseForm')[0].reset();
-    $('#tanggal').val(new Date().toISOString().split('T')[0]);
-    $('#tax_amount').val(0);
-    $('#supplier').val('');
-    $('#supplier_history_select').val('').trigger('change');
-    $('#itemsTableBody').empty();
-    itemCounter = 0;
-    addItemRow();
-    tryRestorePurchaseDraft();
+    isPurchaseDraftHydrating = true;
+    try {
+        $('#purchaseForm')[0].reset();
+        $('#tanggal').val(new Date().toISOString().split('T')[0]);
+        $('#tax_amount').val(0);
+        $('#supplier').val('');
+        $('#supplier_history_select').val('').trigger('change');
+        $('#itemsTableBody').empty();
+        itemCounter = 0;
+        addItemRow();
+        tryRestorePurchaseDraft();
+    } finally {
+        isPurchaseDraftHydrating = false;
+    }
 }
 
 // Tambah baris item
@@ -920,6 +926,10 @@ function buildPurchaseDraftPayload() {
 }
 
 function savePurchaseDraft() {
+    if (isPurchaseDraftHydrating) {
+        return;
+    }
+
     try {
         const payload = buildPurchaseDraftPayload();
         localStorage.setItem(PURCHASE_DRAFT_KEY, JSON.stringify(payload));

@@ -379,6 +379,7 @@ $is_owner = ($user_role === 'Owner');
 const userRole = '<?php echo $_SESSION['role'] ?? 'Admin'; ?>';
 const isOwner = (userRole === 'Owner');
 const SPK_CREATE_DRAFT_KEY = 'draft_spk_create_v1';
+let isSpkCreateDraftHydrating = false;
 
 $(document).ready(function() {
     loadSPKs();
@@ -669,16 +670,21 @@ function getDiscountStatusBadge(status) {
 }
 
 function openAddModal() {
-    $('#spkForm')[0].reset();
-    $('#tanggal').val(new Date().toISOString().split('T')[0]);
-    $('#customer_id_real').val('');
-    $('#vehicle_id').html('<option value="">-- Pilih Customer Dulu --</option>').prop('disabled', true);
+    isSpkCreateDraftHydrating = true;
+    try {
+        $('#spkForm')[0].reset();
+        $('#tanggal').val(new Date().toISOString().split('T')[0]);
+        $('#customer_id_real').val('');
+        $('#vehicle_id').html('<option value="">-- Pilih Customer Dulu --</option>').prop('disabled', true);
 
-    if ($.fn.select2 && $('#customer_id').hasClass('select2-hidden-accessible')) {
-        $('#customer_id').val('').trigger('change');
+        if ($.fn.select2 && $('#customer_id').hasClass('select2-hidden-accessible')) {
+            $('#customer_id').val('').trigger('change');
+        }
+
+        tryRestoreSpkCreateDraft();
+    } finally {
+        isSpkCreateDraftHydrating = false;
     }
-
-    tryRestoreSpkCreateDraft();
 }
 
 $('#spkForm').on('submit', function(e) {
@@ -1033,6 +1039,10 @@ function buildSpkCreateDraftPayload() {
 }
 
 function saveSpkCreateDraft() {
+    if (isSpkCreateDraftHydrating) {
+        return;
+    }
+
     try {
         const payload = buildSpkCreateDraftPayload();
         localStorage.setItem(SPK_CREATE_DRAFT_KEY, JSON.stringify(payload));
