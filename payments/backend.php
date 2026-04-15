@@ -55,10 +55,6 @@ elseif ($action === 'get_operational_expense_categories') {
 }
 
 elseif ($action === 'create_expense_category') {
-    if ($userRole !== 'Owner') {
-        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa menambah kategori']);
-        exit;
-    }
     $code = strtoupper(trim($_POST['code'] ?? ''));
     $name = trim($_POST['name'] ?? '');
     $description = trim($_POST['description'] ?? '');
@@ -81,10 +77,6 @@ elseif ($action === 'create_expense_category') {
 }
 
 elseif ($action === 'update_expense_category') {
-    if ($userRole !== 'Owner') {
-        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa mengubah kategori']);
-        exit;
-    }
     $id = (int)($_POST['id'] ?? 0);
     $code = strtoupper(trim($_POST['code'] ?? ''));
     $name = trim($_POST['name'] ?? '');
@@ -109,10 +101,6 @@ elseif ($action === 'update_expense_category') {
 }
 
 elseif ($action === 'delete_expense_category') {
-    if ($userRole !== 'Owner') {
-        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa menghapus kategori']);
-        exit;
-    }
     $id = (int)($_POST['id'] ?? 0);
     if ($id <= 0) {
         echo json_encode(['success' => false, 'message' => 'ID kategori tidak valid']);
@@ -127,11 +115,6 @@ elseif ($action === 'delete_expense_category') {
 }
 
 elseif ($action === 'toggle_expense_category_status') {
-    if ($userRole !== 'Owner') {
-        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa mengubah tipe kategori']);
-        exit;
-    }
-
     $id = (int)($_POST['id'] ?? 0);
     $status = (int)($_POST['status'] ?? 0);
     $status = ($status === 1) ? 1 : 0;
@@ -182,6 +165,18 @@ elseif ($action === 'read_transactions') {
     $direction = $_GET['direction'] ?? '';
     $category = $_GET['category'] ?? '';
     $keyword = trim($_GET['keyword'] ?? '');
+    $page = (int)($_GET['page'] ?? 1);
+    $perPage = (int)($_GET['per_page'] ?? 20);
+    if ($page < 1) {
+        $page = 1;
+    }
+    if ($perPage < 1) {
+        $perPage = 20;
+    }
+    if ($perPage > 100) {
+        $perPage = 100;
+    }
+    $offset = ($page - 1) * $perPage;
 
           $sql = "SELECT ft.*, fa.code as account_code, fa.name as account_name, u.username as created_by_name,
                     uo.username as approved_by_name, ur.username as rejected_by_name,
@@ -217,13 +212,96 @@ elseif ($action === 'read_transactions') {
         $conds[] = "(ft.note LIKE '%$kwEsc%' OR ft.reference_type LIKE '%$kwEsc%' OR ft.reference_id LIKE '%$kwEsc%')";
     }
 
+    $whereSql = '';
     if (count($conds) > 0) {
-        $sql .= " WHERE " . implode(' AND ', $conds);
+        $whereSql = " WHERE " . implode(' AND ', $conds);
+        $sql .= $whereSql;
     }
 
-    $sql .= " ORDER BY ft.tanggal DESC, ft.id DESC LIMIT 300";
+    $countSql = "SELECT COUNT(*) as total
+                 FROM finance_transactions ft
+                 JOIN finance_accounts fa ON ft.account_id = fa.id" . $whereSql;
+    $countRes = mysqli_query($conn, $countSql);
+    $total = 0;
+    if ($countRes) {
+        $countRow = mysqli_fetch_assoc($countRes);
+        $total = (int)($countRow['total'] ?? 0);
+    }
+
+    $totalPages = $total > 0 ? (int)ceil($total / $perPage) : 1;
+    if ($page > $totalPages) {
+        $page = $totalPages;
+        $offset = ($page - 1) * $perPage;
+    }
+
+    $sql .= " ORDER BY ft.tanggal DESC, ft.id DESC LIMIT $perPage OFFSET $offset";
 
     $res = mysqli_query($conn, $sql);
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $rows[] = $r;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'data' => $rows,
+        'pagination' => [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'total_pages' => $totalPages
+        ]
+    ]);
+}
+
+elseif ($action === 'read_account_expenses') {
+    $accountCode = trim($_GET['account_code'] ?? '');
+    $from = $_GET['from'] ?? '';
+    $to = $_GET['to'] ?? '';
+    $status = trim($_GET['status'] ?? '');
+    $keyword = trim($_GET['keyword'] ?? '');
+    if ($accountCode === '') {
+        echo json_encode(['success' => false, 'message' => 'Kode akun wajib diisi']);
+        exit;
+    }
+
+    $accountCodeEsc = mysqli_real_escape_string($conn, $accountCode);
+    $conds = [
+        "fa.code = '$accountCodeEsc'",
+        "ft.direction = 'out'"
+    ];
+
+    if ($from !== '') {
+        $conds[] = "ft.tanggal >= '" . mysqli_real_escape_string($conn, $from) . "'";
+    }
+    if ($to !== '') {
+        $conds[] = "ft.tanggal <= '" . mysqli_real_escape_string($conn, $to) . "'";
+    }
+    if ($status !== '') {
+        $statusEsc = mysqli_real_escape_string($conn, $status);
+        $conds[] = "ft.status = '$statusEsc'";
+    }
+    if ($keyword !== '') {
+        $keywordEsc = mysqli_real_escape_string($conn, $keyword);
+        $conds[] = "(ft.note LIKE '%$keywordEsc%' OR ft.reference_type LIKE '%$keywordEsc%' OR ft.category LIKE '%$keywordEsc%')";
+    }
+
+    $sql = "SELECT ft.id, ft.tanggal, ft.direction, ft.status, ft.category, ft.reference_type, ft.reference_id,
+                   ft.note, ft.amount, ft.created_by, u.username as created_by_name,
+                   fa.code as account_code, fa.name as account_name
+            FROM finance_transactions ft
+            JOIN finance_accounts fa ON ft.account_id = fa.id
+            LEFT JOIN users u ON ft.created_by = u.id
+            WHERE " . implode(' AND ', $conds) . "
+            ORDER BY ft.tanggal DESC, ft.id DESC
+            LIMIT 300";
+
+    $res = mysqli_query($conn, $sql);
+    if (!$res) {
+        echo json_encode(['success' => false, 'message' => 'Gagal memuat detail pengeluaran: ' . mysqli_error($conn)]);
+        exit;
+    }
+
     $rows = [];
     while ($r = mysqli_fetch_assoc($res)) {
         $rows[] = $r;
