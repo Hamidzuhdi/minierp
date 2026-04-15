@@ -21,6 +21,16 @@ include '../header.php';
     max-height: 280px;
     overflow-y: auto;
 }
+
+.summary-card-clickable {
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.summary-card-clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12);
+}
 </style>
 
 <div class="container-fluid py-4">
@@ -29,8 +39,24 @@ include '../header.php';
     </div>
 
     <div class="row g-3 mb-4">
-        <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><small>Saldo Cash</small><h5 id="sumCash">Rp 0</h5></div></div></div>
-        <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><small>Saldo Rekening</small><h5 id="sumBank">Rp 0</h5></div></div></div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm summary-card-clickable" id="cashSummaryCard" onclick="openAccountExpenseModal('cash', 'Saldo Cash')">
+                <div class="card-body">
+                    <small>Saldo Cash</small>
+                    <h5 id="sumCash">Rp 0</h5>
+                    <small class="text-muted">Klik untuk lihat detail pengeluaran</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm summary-card-clickable" id="bankSummaryCard" onclick="openAccountExpenseModal('bank', 'Saldo Rekening')">
+                <div class="card-body">
+                    <small>Saldo Rekening</small>
+                    <h5 id="sumBank">Rp 0</h5>
+                    <small class="text-muted">Klik untuk lihat detail pengeluaran</small>
+                </div>
+            </div>
+        </div>
         <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><small>Total Saldo</small><h5 id="sumTotal">Rp 0</h5></div></div></div>
         <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><small>Cashflow Bulan Ini</small><h5 id="sumMonthFlow">Rp 0</h5></div></div></div>
     </div>
@@ -69,47 +95,7 @@ include '../header.php';
     <?php endif; ?>
 
     <div class="row g-3">
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white"><strong>Input Pengeluaran Operasional</strong></div>
-                <div class="card-body">
-                    <form id="operationalForm">
-                        <div class="mb-2">
-                            <label class="form-label">Tanggal</label>
-                            <input type="date" class="form-control" id="op_tanggal" required>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Nama Biaya</label>
-                            <input type="text" class="form-control" id="op_name" placeholder="PDAM / Listrik / ATK" required>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Kategori Pengeluaran</label>
-                            <select class="form-select" id="op_category" required>
-                                <option value="">-- Pilih Kategori --</option>
-                            </select>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Nominal</label>
-                            <input type="number" class="form-control" id="op_amount" min="1" required>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Sumber Dana</label>
-                            <select class="form-select" id="op_account" required>
-                                <option value="">-- Pilih --</option>
-                            </select>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Catatan</label>
-                            <textarea class="form-control" id="op_note" rows="2"></textarea>
-                        </div>
-                        <button class="btn btn-primary w-100" type="submit"><i class="fas fa-save"></i> Simpan Pengeluaran</button>
-                    </form>
-                </div>
-            </div>
-
-        </div>
-
-        <div class="col-md-8">
+        <div class="col-12">
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-white"><strong>Histori Mutasi</strong></div>
                 <div class="card-body">
@@ -126,7 +112,7 @@ include '../header.php';
                         <div class="col-md-2"><select class="form-select form-select-sm" id="f_direction"><option value="">Semua Arah</option><option value="in">Masuk</option><option value="out">Keluar</option><option value="transfer_in">Transfer Masuk</option><option value="transfer_out">Transfer Keluar</option></select></div>
                         <div class="col-md-2"><select class="form-select form-select-sm" id="f_category"><option value="">Semua Kategori</option><option value="IN-CUST-PAYMENT">IN-CUST-PAYMENT</option><option value="IN-CUST-SPAREPART">IN-CUST-SPAREPART</option><option value="OUT-PO">OUT-PO</option><option value="TRF-IN">TRF-IN</option><option value="TRF-OUT">TRF-OUT</option></select></div>
                         <div class="col-md-2"><input type="text" class="form-control form-control-sm" id="f_keyword" placeholder="Keyword"></div>
-                        <div class="col-12 col-md-2 d-grid"><button class="btn btn-sm btn-outline-primary" onclick="loadTransactions()" type="button">Filter</button></div>
+                        <div class="col-12 col-md-2 d-grid"><button class="btn btn-sm btn-outline-primary" onclick="loadTransactions(1)" type="button">Filter</button></div>
                     </div>
 
                     <div class="table-responsive">
@@ -147,74 +133,174 @@ include '../header.php';
                             <tbody id="txTableBody"><tr><td colspan="9" class="text-center">Loading...</td></tr></tbody>
                         </table>
                     </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
+                        <small class="text-muted" id="txPaginationInfo">-</small>
+                        <nav aria-label="Pagination Histori Mutasi">
+                            <ul class="pagination pagination-sm mb-0" id="txPagination"></ul>
+                        </nav>
+                    </div>
                 </div>
             </div>
+        </div>
 
-            <div class="row g-3 mt-1">
-                <div class="<?php echo ($user_role === 'Owner') ? 'col-md-6' : 'col-12'; ?>">
-                    <div class="card border-0 shadow-sm h-100">
-                        <div class="card-header bg-white"><strong>Transfer Antar Akun</strong></div>
-                        <div class="card-body">
-                            <form id="transferForm">
-                                <div class="mb-2">
-                                    <label class="form-label">Tanggal</label>
-                                    <input type="date" class="form-control" id="tf_tanggal" required>
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label">Dari Akun</label>
-                                    <select class="form-select" id="tf_from" required>
-                                        <option value="">-- Pilih --</option>
-                                    </select>
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label">Ke Akun</label>
-                                    <select class="form-select" id="tf_to" required>
-                                        <option value="">-- Pilih --</option>
-                                    </select>
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label">Nominal</label>
-                                    <input type="number" class="form-control" id="tf_amount" min="1" required>
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label">Catatan</label>
-                                    <textarea class="form-control" id="tf_note" rows="2"></textarea>
-                                </div>
-                                <button class="btn btn-outline-primary w-100" type="submit"><i class="fas fa-exchange-alt"></i> Simpan Transfer</button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-
-                <?php if ($user_role === 'Owner'): ?>
-                <div class="col-md-6">
-                    <div class="card border-0 shadow-sm h-100">
-                        <div class="card-header bg-white"><strong>Master Kategori Pengeluaran</strong></div>
-                        <div class="card-body">
-                            <form id="catForm" class="row g-2 mb-2">
-                                <input type="hidden" id="cat_id">
-                                <div class="col-12"><input type="text" class="form-control form-control-sm" id="cat_code" placeholder="Kode (contoh EXP-LAIN)" required></div>
-                                <div class="col-12"><input type="text" class="form-control form-control-sm" id="cat_name" placeholder="Nama kategori" required></div>
-                                <div class="col-12"><input type="text" class="form-control form-control-sm" id="cat_desc" placeholder="Deskripsi (opsional)"></div>
-                                <div class="col-12">
-                                    <div class="form-check form-switch">
-                                        <input class="form-check-input" type="checkbox" id="cat_status">
-                                        <label class="form-check-label" for="cat_status">Biaya Tetap</label>
-                                    </div>
-                                    <small class="text-muted">ON = Biaya Tetap (1), OFF = Biaya Tidak Tetap (0)</small>
-                                </div>
-                                <div class="col-12 d-grid"><button class="btn btn-sm btn-primary" type="submit">Simpan Kategori</button></div>
-                            </form>
-                            <div class="table-responsive">
-                                <table class="table table-sm table-bordered mb-0">
-                                    <thead class="table-light"><tr><th>Kode</th><th>Nama</th><th>Tipe Beban</th><th>Aksi</th></tr></thead>
-                                    <tbody id="catTableBody"><tr><td colspan="4" class="text-center text-muted">Loading...</td></tr></tbody>
-                                </table>
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white"><strong>Input Pengeluaran Operasional</strong></div>
+                <div class="card-body">
+                    <form id="operationalForm">
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label">Tanggal</label>
+                                <input type="date" class="form-control" id="op_tanggal" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Nama Biaya</label>
+                                <input type="text" class="form-control" id="op_name" placeholder="PDAM / Listrik / ATK" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Kategori Pengeluaran</label>
+                                <select class="form-select" id="op_category" required>
+                                    <option value="">-- Pilih Kategori --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Nominal</label>
+                                <input type="number" class="form-control" id="op_amount" min="1" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Sumber Dana</label>
+                                <select class="form-select" id="op_account" required>
+                                    <option value="">-- Pilih --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-9">
+                                <label class="form-label">Catatan</label>
+                                <textarea class="form-control" id="op_note" rows="2"></textarea>
+                            </div>
+                            <div class="col-md-3 d-grid align-self-end">
+                                <button class="btn btn-primary" type="submit"><i class="fas fa-save"></i> Simpan Pengeluaran</button>
                             </div>
                         </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white"><strong>Transfer Antar Akun</strong></div>
+                <div class="card-body">
+                    <form id="transferForm">
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label">Tanggal</label>
+                                <input type="date" class="form-control" id="tf_tanggal" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Dari Akun</label>
+                                <select class="form-select" id="tf_from" required>
+                                    <option value="">-- Pilih --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Ke Akun</label>
+                                <select class="form-select" id="tf_to" required>
+                                    <option value="">-- Pilih --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Nominal</label>
+                                <input type="number" class="form-control" id="tf_amount" min="1" required>
+                            </div>
+                            <div class="col-md-9">
+                                <label class="form-label">Catatan</label>
+                                <textarea class="form-control" id="tf_note" rows="2"></textarea>
+                            </div>
+                            <div class="col-md-3 d-grid align-self-end">
+                                <button class="btn btn-outline-primary" type="submit"><i class="fas fa-exchange-alt"></i> Simpan Transfer</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white"><strong>Master Kategori Pengeluaran</strong></div>
+                <div class="card-body">
+                    <form id="catForm" class="row g-2 mb-2">
+                        <input type="hidden" id="cat_id">
+                        <div class="col-md-3"><input type="text" class="form-control form-control-sm" id="cat_code" placeholder="Kode (contoh EXP-LAIN)" required></div>
+                        <div class="col-md-3"><input type="text" class="form-control form-control-sm" id="cat_name" placeholder="Nama kategori" required></div>
+                        <div class="col-md-3"><input type="text" class="form-control form-control-sm" id="cat_desc" placeholder="Deskripsi (opsional)"></div>
+                        <div class="col-md-2">
+                            <div class="form-check form-switch mt-1">
+                                <input class="form-check-input" type="checkbox" id="cat_status">
+                                <label class="form-check-label" for="cat_status">Biaya Tetap</label>
+                            </div>
+                            <small class="text-muted">ON=1, OFF=0</small>
+                        </div>
+                        <div class="col-md-1 d-grid"><button class="btn btn-sm btn-primary" type="submit">Simpan</button></div>
+                    </form>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead class="table-light"><tr><th>Kode</th><th>Nama</th><th>Tipe Beban</th><th>Aksi</th></tr></thead>
+                            <tbody id="catTableBody"><tr><td colspan="4" class="text-center text-muted">Loading...</td></tr></tbody>
+                        </table>
                     </div>
                 </div>
-                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="accountExpenseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="accountExpenseTitle">Detail Pengeluaran</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-2">
+                        <input type="date" class="form-control form-control-sm" id="ex_from" placeholder="Dari tanggal">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="date" class="form-control form-control-sm" id="ex_to" placeholder="Sampai tanggal">
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select form-select-sm" id="ex_status">
+                            <option value="">Semua Status</option>
+                            <option value="approved">approved</option>
+                            <option value="pending">pending</option>
+                            <option value="rejected">rejected</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <input type="text" class="form-control form-control-sm" id="ex_keyword" placeholder="Cari catatan/ref/kategori...">
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadAccountExpenses()">Filter</button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Tanggal</th>
+                                <th>Status</th>
+                                <th>Kategori</th>
+                                <th>Ref</th>
+                                <th>Dibuat Oleh</th>
+                                <th>Catatan</th>
+                                <th class="text-end">Nominal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="accountExpenseBody"><tr><td colspan="7" class="text-center text-muted">Loading...</td></tr></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -224,6 +310,10 @@ include '../header.php';
 function fmt(n){ return 'Rp ' + parseFloat(n || 0).toLocaleString('id-ID'); }
 const isOwner = '<?php echo $user_role; ?>' === 'Owner';
 let expenseCategoryMap = {};
+let currentTxPage = 1;
+const TX_PER_PAGE = 20;
+let currentExpenseAccountCode = '';
+let currentExpenseAccountLabel = '';
 
 $(document).ready(function(){
     const today = new Date().toISOString().split('T')[0];
@@ -302,7 +392,6 @@ $(document).ready(function(){
     });
 
     $('#catForm').on('submit', function(e){
-        if (!isOwner) return;
         e.preventDefault();
         const id = $('#cat_id').val();
         $.ajax({
@@ -364,7 +453,7 @@ function applyQuickRange(type, triggerLoad = true) {
     }
 
     if (triggerLoad) {
-        loadTransactions();
+        loadTransactions(1);
     }
 }
 
@@ -419,13 +508,13 @@ function loadExpenseCategories(){
                 <td>${c.name}</td>
                 <td>
                     <span class="badge ${isFixed ? 'bg-primary' : 'bg-secondary'}">${isFixed ? 'Beban Tetap' : 'Beban Tidak Tetap'}</span>
-                    ${isOwner ? `<div class="form-check form-switch mt-1 mb-0">
-                        <input class="form-check-input" type="checkbox" ${isFixed ? 'checked' : ''} onchange="toggleCategoryStatus(${c.id}, this.checked)">
-                    </div>` : ''}
+                        <div class="form-check form-switch mt-1 mb-0">
+                            <input class="form-check-input" type="checkbox" ${isFixed ? 'checked' : ''} onchange="toggleCategoryStatus(${c.id}, this.checked)">
+                        </div>
                 </td>
                 <td>
-                    ${isOwner ? `<button type="button" class="btn btn-warning btn-sm me-1" onclick="editCategory(${c.id})"><i class="fas fa-edit"></i></button>
-                    <button type="button" class="btn btn-danger btn-sm" onclick='deleteCategory(${c.id})'><i class="fas fa-trash"></i></button>` : '-'}
+                        <button type="button" class="btn btn-warning btn-sm me-1" onclick="editCategory(${c.id})"><i class="fas fa-edit"></i></button>
+                        <button type="button" class="btn btn-danger btn-sm" onclick='deleteCategory(${c.id})'><i class="fas fa-trash"></i></button>
                 </td>
             </tr>`;
         });
@@ -466,7 +555,6 @@ function resetCategoryForm(){
 }
 
 function toggleCategoryStatus(id, isChecked){
-    if (!isOwner) return;
     $.ajax({
         url: 'backend.php',
         type: 'POST',
@@ -510,6 +598,81 @@ function deleteCategory(id){
     });
 }
 
+function getStatusBadgeHtml(status) {
+    const safeStatus = (status || 'approved').toString().toLowerCase();
+    const statusBadgeMap = {
+        approved: 'success',
+        pending: 'warning',
+        rejected: 'danger'
+    };
+    return `<span class="badge bg-${statusBadgeMap[safeStatus] || 'secondary'}">${safeStatus}</span>`;
+}
+
+function openAccountExpenseModal(accountCode, accountLabel) {
+    currentExpenseAccountCode = accountCode;
+    currentExpenseAccountLabel = accountLabel;
+    $('#accountExpenseTitle').text('Detail Pengeluaran - ' + accountLabel);
+    $('#ex_from').val('');
+    $('#ex_to').val('');
+    $('#ex_status').val('');
+    $('#ex_keyword').val('');
+    $('#accountExpenseBody').html('<tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>');
+
+    if (window.bootstrap && bootstrap.Modal) {
+        const modalEl = document.getElementById('accountExpenseModal');
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    } else {
+        $('#accountExpenseModal').modal('show');
+    }
+
+    loadAccountExpenses();
+}
+
+function loadAccountExpenses() {
+    if (!currentExpenseAccountCode) {
+        return;
+    }
+
+    const query = $.param({
+        action: 'read_account_expenses',
+        account_code: currentExpenseAccountCode,
+        from: $('#ex_from').val(),
+        to: $('#ex_to').val(),
+        status: $('#ex_status').val(),
+        keyword: $('#ex_keyword').val()
+    });
+
+    $.getJSON('backend.php?' + query, function(res) {
+        if (!res.success) {
+            $('#accountExpenseBody').html('<tr><td colspan="7" class="text-center text-danger">' + (res.message || 'Gagal memuat data') + '</td></tr>');
+            return;
+        }
+
+        let html = '';
+        if (!res.data.length) {
+            html = '<tr><td colspan="7" class="text-center text-muted">Belum ada data pengeluaran</td></tr>';
+        } else {
+            res.data.forEach(function(row) {
+                const amount = parseFloat(row.amount || 0);
+                const reference = (row.reference_type || '-') + (row.reference_id ? (' #' + row.reference_id) : '');
+                const creator = row.created_by_name || (row.created_by ? ('User #' + row.created_by) : '-');
+                html += `<tr>
+                    <td>${row.tanggal || '-'}</td>
+                    <td>${getStatusBadgeHtml(row.status)}</td>
+                    <td>${row.category || '-'}</td>
+                    <td>${reference}</td>
+                    <td>${creator}</td>
+                    <td>${row.note || '-'}</td>
+                    <td class="text-end text-danger">-${fmt(amount)}</td>
+                </tr>`;
+            });
+        }
+
+        $('#accountExpenseBody').html(html);
+    });
+}
+
 function loadSummary(){
     $.getJSON('backend.php?action=summary', function(res){
         if (!res.success) return;
@@ -522,6 +685,9 @@ function loadSummary(){
 }
 
 function loadTransactions(){
+    const page = arguments.length > 0 && arguments[0] ? parseInt(arguments[0], 10) : currentTxPage;
+    currentTxPage = Number.isNaN(page) || page < 1 ? 1 : page;
+
     $.ajax({
         url: 'backend.php',
         dataType: 'json',
@@ -532,7 +698,9 @@ function loadTransactions(){
             account: $('#f_account').val(),
             direction: $('#f_direction').val(),
             category: $('#f_category').val(),
-            keyword: $('#f_keyword').val()
+            keyword: $('#f_keyword').val(),
+            page: currentTxPage,
+            per_page: TX_PER_PAGE
         },
         success: function(res){
             if (!res.success) return;
@@ -560,13 +728,7 @@ function loadTransactions(){
                         }
                     }
 
-                    const status = t.status || 'approved';
-                    const statusBadgeMap = {
-                        approved: 'success',
-                        pending: 'warning',
-                        rejected: 'danger'
-                    };
-                    const statusBadge = `<span class="badge bg-${statusBadgeMap[status] || 'secondary'}">${status}</span>`;
+                    const statusBadge = getStatusBadgeHtml(t.status);
 
                     html += `<tr>
                         <td>${t.tanggal}</td>
@@ -582,8 +744,65 @@ function loadTransactions(){
                 });
             }
             $('#txTableBody').html(html);
+            renderTxPagination(res.pagination || null);
         }
     });
+}
+
+function renderTxPagination(pagination) {
+    if (!pagination) {
+        $('#txPagination').html('');
+        $('#txPaginationInfo').text('-');
+        return;
+    }
+
+    const page = parseInt(pagination.page || 1, 10);
+    const perPage = parseInt(pagination.per_page || TX_PER_PAGE, 10);
+    const total = parseInt(pagination.total || 0, 10);
+    const totalPages = Math.max(1, parseInt(pagination.total_pages || 1, 10));
+    const start = total === 0 ? 0 : ((page - 1) * perPage) + 1;
+    const end = Math.min(page * perPage, total);
+
+    $('#txPaginationInfo').text('Menampilkan ' + start + ' - ' + end + ' dari ' + total + ' data');
+
+    if (totalPages <= 1) {
+        $('#txPagination').html('');
+        return;
+    }
+
+    let items = '';
+    const prevDisabled = page <= 1 ? ' disabled' : '';
+    const nextDisabled = page >= totalPages ? ' disabled' : '';
+    const prevPage = page - 1;
+    const nextPage = page + 1;
+
+    items += `<li class="page-item${prevDisabled}"><a class="page-link" href="javascript:void(0)" onclick="loadTransactions(${prevPage})">Prev</a></li>`;
+
+    const firstPage = Math.max(1, page - 2);
+    const lastPage = Math.min(totalPages, page + 2);
+
+    if (firstPage > 1) {
+        items += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="loadTransactions(1)">1</a></li>`;
+        if (firstPage > 2) {
+            items += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+        }
+    }
+
+    for (let i = firstPage; i <= lastPage; i++) {
+        const active = i === page ? ' active' : '';
+        items += `<li class="page-item${active}"><a class="page-link" href="javascript:void(0)" onclick="loadTransactions(${i})">${i}</a></li>`;
+    }
+
+    if (lastPage < totalPages) {
+        if (lastPage < totalPages - 1) {
+            items += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+        }
+        items += `<li class="page-item"><a class="page-link" href="javascript:void(0)" onclick="loadTransactions(${totalPages})">${totalPages}</a></li>`;
+    }
+
+    items += `<li class="page-item${nextDisabled}"><a class="page-link" href="javascript:void(0)" onclick="loadTransactions(${nextPage})">Next</a></li>`;
+
+    $('#txPagination').html(items);
 }
 
 function loadPendingApprovals() {
