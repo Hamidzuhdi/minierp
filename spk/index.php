@@ -690,6 +690,15 @@ function openAddModal() {
 $('#spkForm').on('submit', function(e) {
     e.preventDefault();
 
+    // Fallback: keep hidden customer id in sync with selected vehicle option.
+    if (!$('#customer_id_real').val()) {
+        const selectedVehicle = $('#vehicle_id option:selected');
+        const derivedCustomerId = selectedVehicle.data('customer-id') || '';
+        if (derivedCustomerId) {
+            $('#customer_id_real').val(derivedCustomerId);
+        }
+    }
+
     if (!$('#vehicle_id').val()) {
         showAlert('warning', 'Pilih kendaraan terlebih dahulu');
         return;
@@ -714,6 +723,11 @@ $('#spkForm').on('submit', function(e) {
             } else {
                 showAlert('danger', response.message);
             }
+        },
+        error: function(xhr, status, error) {
+            const serverText = (xhr && xhr.responseText) ? String(xhr.responseText).trim() : '';
+            const shortDetail = serverText ? serverText.substring(0, 250) : (error || status || 'Unknown error');
+            showAlert('danger', 'Gagal membuat SPK. Detail: ' + shortDetail);
         }
     });
 });
