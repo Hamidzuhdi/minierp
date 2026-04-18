@@ -71,9 +71,24 @@ if (!$mekanik_col_res || mysqli_num_rows($mekanik_col_res) === 0) {
 // CREATE - Buat SPK Baru
 if ($action === 'create') {
     $customer_id = (int)($_POST['customer_id'] ?? 0);
-    $vehicle_id = (int)$_POST['vehicle_id'];
-    $tanggal = $_POST['tanggal'];
-    $keluhan_customer = trim($_POST['keluhan_customer']);
+    $vehicle_id = (int)($_POST['vehicle_id'] ?? 0);
+    $tanggal = trim((string)($_POST['tanggal'] ?? ''));
+    $keluhan_customer = trim((string)($_POST['keluhan_customer'] ?? ''));
+
+    if ($vehicle_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Kendaraan wajib dipilih']);
+        exit;
+    }
+
+    if ($tanggal === '') {
+        echo json_encode(['success' => false, 'message' => 'Tanggal wajib diisi']);
+        exit;
+    }
+
+    if ($keluhan_customer === '') {
+        echo json_encode(['success' => false, 'message' => 'Keluhan customer wajib diisi']);
+        exit;
+    }
 
     // Always bind customer to the selected vehicle owner to avoid mismatches.
     $vehicleCheck = mysqli_query($conn, "SELECT customer_id FROM vehicles WHERE id = $vehicle_id LIMIT 1");
@@ -88,35 +103,71 @@ if ($action === 'create') {
         exit;
     }
     
-    // Generate kode unik reference
+    // Generate kode unik reference based on selected tanggal and existing max suffix.
+    $tanggalTs = strtotime($tanggal);
+    if ($tanggalTs === false) {
+        echo json_encode(['success' => false, 'message' => 'Format tanggal tidak valid']);
+        exit;
+    }
+
     $prefix = 'SPK';
-    $date_code = date('Ymd');
-    
-    // Cari nomor urut hari ini
-    $check = mysqli_query($conn, "SELECT COUNT(*) as cnt FROM spk WHERE DATE(tanggal) = '$tanggal'");
-    $row = mysqli_fetch_assoc($check);
-    $urutan = $row['cnt'] + 1;
-    
-    $kode_unik_reference = $prefix . '-' . $date_code . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
-    
-    $sql = "INSERT INTO spk (kode_unik_reference, customer_id, vehicle_id, tanggal, keluhan_customer, status_spk) 
-            VALUES ('" . mysqli_real_escape_string($conn, $kode_unik_reference) . "',
-                    $customer_id,
-                    $vehicle_id,
-                    '" . mysqli_real_escape_string($conn, $tanggal) . "',
-                    '" . mysqli_real_escape_string($conn, $keluhan_customer) . "',
-                    'Menunggu Konfirmasi')";
-    
-    if (mysqli_query($conn, $sql)) {
-        $spk_id = mysqli_insert_id($conn);
+    $date_code = date('Ymd', $tanggalTs);
+    $kodePrefix = $prefix . '-' . $date_code . '-';
+    $kodePrefixEsc = mysqli_real_escape_string($conn, $kodePrefix);
+    $tanggalEsc = mysqli_real_escape_string($conn, $tanggal);
+    $keluhanEsc = mysqli_real_escape_string($conn, $keluhan_customer);
+
+    $kode_unik_reference = '';
+    $spk_id = 0;
+    $created = false;
+    $lastError = '';
+
+    // Retry a few times to handle simultaneous inserts safely.
+    for ($attempt = 0; $attempt < 5; $attempt++) {
+        $seqSql = "SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(kode_unik_reference, '-', -1) AS UNSIGNED)), 0) AS max_seq
+                   FROM spk
+                   WHERE kode_unik_reference LIKE '{$kodePrefixEsc}%'";
+        $seqRes = mysqli_query($conn, $seqSql);
+        if (!$seqRes) {
+            $lastError = mysqli_error($conn);
+            break;
+        }
+
+        $seqRow = mysqli_fetch_assoc($seqRes);
+        $urutan = ((int)($seqRow['max_seq'] ?? 0)) + 1;
+        $kode_unik_reference = $kodePrefix . str_pad((string)$urutan, 4, '0', STR_PAD_LEFT);
+        $kodeEsc = mysqli_real_escape_string($conn, $kode_unik_reference);
+
+        $sql = "INSERT INTO spk (kode_unik_reference, customer_id, vehicle_id, tanggal, keluhan_customer, status_spk)
+                VALUES ('$kodeEsc',
+                        $customer_id,
+                        $vehicle_id,
+                        '$tanggalEsc',
+                        '$keluhanEsc',
+                        'Menunggu Konfirmasi')";
+
+        if (mysqli_query($conn, $sql)) {
+            $spk_id = mysqli_insert_id($conn);
+            $created = true;
+            break;
+        }
+
+        if (mysqli_errno($conn) !== 1062) {
+            $lastError = mysqli_error($conn);
+            break;
+        }
+    }
+
+    if ($created) {
         echo json_encode([
-            'success' => true, 
+            'success' => true,
             'message' => 'SPK berhasil dibuat',
             'kode_unik' => $kode_unik_reference,
             'spk_id' => $spk_id
         ]);
     } else {
-        echo json_encode(['success' => false, 'message' => 'Gagal membuat SPK: ' . mysqli_error($conn)]);
+        $errorMsg = $lastError !== '' ? $lastError : 'Kode SPK bentrok, silakan coba lagi';
+        echo json_encode(['success' => false, 'message' => 'Gagal membuat SPK: ' . $errorMsg]);
     }
 }
 
