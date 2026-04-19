@@ -245,7 +245,7 @@ include '../header.php';
                     </form>
                     <div class="table-responsive">
                         <table class="table table-sm table-bordered mb-0">
-                            <thead class="table-light"><tr><th>Kode</th><th>Nama</th><th>Tipe Beban</th><th>Aksi</th></tr></thead>
+                            <thead class="table-light"><tr><th>KODE</th><th>NAMA</th><th>TIPE BEBAN</th><th>AKSI</th></tr></thead>
                             <tbody id="catTableBody"><tr><td colspan="4" class="text-center text-muted">Loading...</td></tr></tbody>
                         </table>
                     </div>

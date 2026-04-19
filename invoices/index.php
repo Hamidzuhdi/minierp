@@ -38,6 +38,7 @@ include '../header.php';
                                 <option value="Belum Bayar">Belum Bayar</option>
                                 <option value="Sudah Dicicil">Sudah Dicicil</option>
                                 <option value="Lunas">Lunas</option>
+                                <option value="Tidak_Aktif">Tidak Aktif</option>
                             </select>
                         </div>
                     </div>
@@ -244,9 +245,12 @@ function displayInvoices(invoices) {
         html = '<tr><td colspan="9" class="text-center">Belum ada data invoice</td></tr>';
     } else {
         invoices.forEach(function(inv) {
+            const displaySpkCode = normalizeSpkCode(inv.spk_code, inv.revision_number);
             let statusBadge = '';
             if (inv.status_piutang === 'Lunas') {
                 statusBadge = '<span class="badge bg-success">Lunas</span>';
+            } else if (inv.status_piutang === 'Tidak_Aktif') {
+                statusBadge = '<span class="badge bg-secondary">Tidak Aktif</span>';
             } else if (inv.status_piutang === 'Sudah Dicicil') {
                 statusBadge = '<span class="badge bg-warning">Sudah Dicicil</span>';
             } else {
@@ -260,7 +264,7 @@ function displayInvoices(invoices) {
             html += `
                 <tr>
                     <td>${inv.id}</td>
-                    <td><small>${inv.spk_code}</small></td>
+                    <td><small>${displaySpkCode}</small></td>
                     <td>${inv.customer_name}<br><small class="text-muted">${inv.customer_phone}</small></td>
                     <td><small>${inv.nomor_polisi}<br>${inv.merk} ${inv.model}</small></td>
                     <td>${creatorText}</td>
@@ -271,9 +275,14 @@ function displayInvoices(invoices) {
                         <button class="btn btn-info btn-sm" onclick="viewDetail(${inv.id})" title="Detail">
                             <i class="fas fa-eye"></i>
                         </button>
-                        ${inv.status_piutang !== 'Lunas' && (isOwner || userRole === 'Admin') ? `
+                        ${(inv.status_piutang !== 'Lunas' && inv.status_piutang !== 'Tidak_Aktif') && (isOwner || userRole === 'Admin') ? `
                         <button class="btn btn-success btn-sm" onclick="openPaymentModal(${inv.id}, ${inv.sisa_piutang})" title="Input Bayar">
                             <i class="fas fa-money-bill"></i>
+                        </button>
+                        ` : ''}
+                        ${isOwner && inv.status_spk === 'Sudah Cetak Invoice' && (inv.status_piutang === 'Belum Bayar' || inv.status_piutang === 'Lunas') ? `
+                        <button class="btn btn-warning btn-sm" onclick="createRevision(${inv.spk_id}, '${inv.status_piutang}')" title="Buat Revisi">
+                            <i class="fas fa-redo"></i> Revisi
                         </button>
                         ` : ''}
                     </td>
@@ -332,7 +341,15 @@ function viewDetail(id) {
 
 // Display invoice detail
 function displayInvoiceDetail(inv) {
-    let statusBadge = inv.status_piutang === 'Lunas' ? 'success' : (inv.status_piutang === 'Sudah Dicicil' ? 'warning' : 'danger');
+    const displaySpkCode = normalizeSpkCode(inv.spk_code, inv.revision_number);
+    let statusBadge = 'danger';
+    if (inv.status_piutang === 'Lunas') {
+        statusBadge = 'success';
+    } else if (inv.status_piutang === 'Sudah Dicicil') {
+        statusBadge = 'warning';
+    } else if (inv.status_piutang === 'Tidak_Aktif') {
+        statusBadge = 'secondary';
+    }
     
     // Services table
     let servicesHtml = '';
@@ -415,7 +432,7 @@ function displayInvoiceDetail(inv) {
         <div class="row mb-3">
             <div class="col-md-6">
                 <strong>Invoice ID:</strong> #${inv.id}<br>
-                <strong>SPK:</strong> ${inv.spk_code}<br>
+                <strong>SPK:</strong> ${displaySpkCode}<br>
                 <strong>Tanggal SPK:</strong> ${formatDate(inv.spk_tanggal)}<br>
                 <strong>Customer:</strong> ${inv.customer_name} (${inv.customer_phone})<br>
                 <strong>Alamat:</strong> ${inv.customer_address || '-'}
@@ -485,7 +502,7 @@ function displayInvoiceDetail(inv) {
         <hr>
         <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="mb-0">Riwayat Pembayaran</h6>
-            ${inv.status_piutang !== 'Lunas' && (isOwner || userRole === 'Admin') ? `
+            ${(inv.status_piutang !== 'Lunas' && inv.status_piutang !== 'Tidak_Aktif') && (isOwner || userRole === 'Admin') ? `
             <button class="btn btn-success btn-sm" onclick="openPaymentModal(${inv.id}, ${inv.sisa_piutang})">
                 <i class="fas fa-plus"></i> Input Bayar
             </button>
@@ -667,6 +684,54 @@ function formatDateTime(datetime) {
     if (!datetime) return '-';
     let d = new Date(datetime);
     return d.toLocaleDateString('id-ID', {day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'});
+}
+
+function normalizeSpkCode(rawCode, revisionNumber) {
+    let code = String(rawCode || '');
+    let base = code.replace(/(?:-REV\d+)+$/, '');
+    let rev = parseInt(revisionNumber, 10) || 0;
+    if (rev > 0) {
+        return base + '-REV' + rev;
+    }
+    return code;
+}
+
+// Create SPK Revision
+function createRevision(spkId, statusPiutang) {
+    // Validasi status piutang
+    if (statusPiutang === 'Sudah Dicicil') {
+        showAlert('warning', 'Status invoice masih "Sudah Dicicil". Harap lunasin dahulu sebelum membuat revisi!');
+        return;
+    }
+    
+    if (!confirm('Buat SPK revisi dan auto-generate invoice baru?\n\nSPK akan dibuat dengan status "Sudah Cetak Invoice" dan invoice otomatis di-generate.')) {
+        return;
+    }
+    
+    $.ajax({
+        url: '../spk/backend.php',
+        type: 'POST',
+        data: {
+            action: 'create_revision',
+            original_spk_id: spkId
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', 'SPK revisi berhasil dibuat!<br>Kode: <strong>' + response.kode_spk + '</strong><br>Invoice: <strong>' + response.no_invoice + '</strong>');
+                // Redirect ke SPK page dan open modal untuk SPK revisi
+                setTimeout(function() {
+                    window.location.href = '../spk/index.php?open_modal=' + response.spk_id;
+                }, 1500);
+            } else {
+                showAlert('danger', 'Gagal membuat revisi: ' + response.message);
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Response:', xhr.responseText);
+            showAlert('danger', 'Error: ' + error + ' - ' + xhr.responseText);
+        }
+    });
 }
 
 function showAlert(type, message) {

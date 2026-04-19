@@ -15,11 +15,22 @@ $month_esc = !empty($month) ? mysqli_real_escape_string($conn, $month) : '';
 $month_filter = !empty($month_esc) ? "AND DATE_FORMAT(ft.tanggal, '%Y-%m') = '$month_esc'" : '';
 $month_filter_invoice = !empty($month_esc) ? "AND DATE_FORMAT(i.tanggal, '%Y-%m') = '$month_esc'" : '';
 
-$qIn = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'in' $month_filter";
+$qIn = "SELECT COALESCE(SUM(ft.amount), 0) total
+                FROM finance_transactions ft
+                LEFT JOIN invoices i ON ft.reference_type = 'invoice' AND ft.reference_id = i.id
+                WHERE ft.direction = 'in'
+                    AND (ft.reference_type <> 'invoice' OR COALESCE(i.status_piutang, '') <> 'Tidak_Aktif')
+                    $month_filter";
 $qOut = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'out' $month_filter";
 $qPo = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'out' AND ft.category = 'OUT-PO' $month_filter";
 $qOps = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'out' AND ft.reference_type = 'operational' $month_filter";
-$qSpk = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'in' AND ft.reference_type = 'invoice' $month_filter";
+$qSpk = "SELECT COALESCE(SUM(ft.amount), 0) total
+                 FROM finance_transactions ft
+                 JOIN invoices i ON i.id = ft.reference_id
+                 WHERE ft.direction = 'in'
+                     AND ft.reference_type = 'invoice'
+                     AND COALESCE(i.status_piutang, '') <> 'Tidak_Aktif'
+                     $month_filter";
 $qSalesDiscount = "SELECT COALESCE(SUM(ft.amount), 0) total
                                     FROM finance_transactions ft
                                     LEFT JOIN expense_categories ec ON ec.code = ft.category

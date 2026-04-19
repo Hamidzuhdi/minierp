@@ -53,14 +53,19 @@ $purchase_pending = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as t
 if ($is_owner) {
     // Omzet bulan ini (dari invoice yang lunas)
     $current_month = date('Y-m');
-    $omzet_query = "SELECT COALESCE(SUM(total), 0) as omzet FROM invoices WHERE DATE_FORMAT(tanggal, '%Y-%m') = '$current_month' AND status_piutang = 'Lunas'";
+    $omzet_query = "SELECT COALESCE(SUM(total), 0) as omzet
+                    FROM invoices
+                    WHERE DATE_FORMAT(tanggal, '%Y-%m') = '$current_month'
+                      AND status_piutang = 'Lunas'
+                      AND status_piutang <> 'Tidak_Aktif'";
     $omzet = mysqli_fetch_assoc(mysqli_query($conn, $omzet_query))['omzet'];
     
     // Total piutang aktif (invoice belum lunas)
     $piutang_query = "SELECT COALESCE(SUM(i.total - COALESCE(p.total_bayar, 0)), 0) as piutang 
                       FROM invoices i 
                       LEFT JOIN (SELECT invoice_id, SUM(amount) as total_bayar FROM payments GROUP BY invoice_id) p ON i.id = p.invoice_id 
-                      WHERE i.status_piutang != 'Lunas'";
+                      WHERE i.status_piutang != 'Lunas'
+                        AND i.status_piutang != 'Tidak_Aktif'";
     $piutang = mysqli_fetch_assoc(mysqli_query($conn, $piutang_query))['piutang'];
     
     // Total hutang di PO (purchase yang belum paid)
@@ -68,7 +73,11 @@ if ($is_owner) {
     $hutang = mysqli_fetch_assoc(mysqli_query($conn, $hutang_query))['hutang'];
     
     // Cashflow bulan ini
-    $cashflow_masuk_query = "SELECT COALESCE(SUM(amount), 0) as masuk FROM payments WHERE DATE_FORMAT(tanggal, '%Y-%m') = '$current_month'";
+    $cashflow_masuk_query = "SELECT COALESCE(SUM(p.amount), 0) as masuk
+                             FROM payments p
+                             JOIN invoices i ON i.id = p.invoice_id
+                             WHERE DATE_FORMAT(p.tanggal, '%Y-%m') = '$current_month'
+                               AND i.status_piutang <> 'Tidak_Aktif'";
     $cashflow_masuk = mysqli_fetch_assoc(mysqli_query($conn, $cashflow_masuk_query))['masuk'];
     
     $cashflow_keluar_query = "SELECT COALESCE(SUM(total), 0) as keluar FROM purchases WHERE DATE_FORMAT(tanggal, '%Y-%m') = '$current_month' AND is_paid = 'Sudah Bayar'";
@@ -417,55 +426,15 @@ if ($is_owner) {
         <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-success text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Laba Kotor [1 - (2 + 3)]</div>
+                    <div class="small mb-1">Laba Kotor</div>
                     <div class="fw-bold" id="fcLabaKotorFormula">-</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-4 col-sm-6">
-            <div class="card border-0 shadow-sm bg-light h-100">
-                <div class="card-body p-3">
-                    <div class="small mb-1 text-muted">Judul (Static)</div>
-                    <div class="fw-bold">Beban Operasional</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-4 col-sm-6">
-            <div class="card border-0 shadow-sm bg-light h-100">
-                <div class="card-body p-3">
-                    <div class="small mb-1 text-muted">Judul (Static)</div>
-                    <div class="fw-bold">Beban Tetap</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-4 col-sm-6">
-            <div class="card border-0 shadow-sm bg-secondary text-white h-100">
-                <div class="card-body p-3">
-                    <div class="small mb-1">Semua expense_categories status = 1</div>
-                    <div class="fw-bold" id="fcFixedExpense">-</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-4 col-sm-6">
-            <div class="card border-0 shadow-sm bg-light h-100">
-                <div class="card-body p-3">
-                    <div class="small mb-1 text-muted">Judul (Static)</div>
-                    <div class="fw-bold">Beban Tidak Tetap</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-4 col-sm-6">
-            <div class="card border-0 shadow-sm bg-secondary text-white h-100">
-                <div class="card-body p-3">
-                    <div class="small mb-1">Semua expense_categories status = 0</div>
-                    <div class="fw-bold" id="fcVariableExpense">-</div>
                 </div>
             </div>
         </div>
         <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-dark text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Total Beban Operasional [7 + 9]</div>
+                    <div class="small mb-1">Total Beban Operasional</div>
                     <div class="fw-bold" id="fcTotalBebanOps">-</div>
                 </div>
             </div>
@@ -481,8 +450,16 @@ if ($is_owner) {
         <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-success text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Gross Profit [4 - (10 + 11)]</div>
+                    <div class="small mb-1">Gross Profit </div>
                     <div class="fw-bold" id="fcGrossProfit">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm text-white h-100" style="background-color: #9c27b0;">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Total Jasa Mekanik</div>
+                    <div class="fw-bold" id="fcTotalJasaMekanik">-</div>
                 </div>
             </div>
         </div>
@@ -595,11 +572,9 @@ if ($is_owner) {
                 $('#fcSalesDiscount').text(fcFormat(res.summary.sales_discount));
                 $('#fcSpareHpp').text(fcFormat(res.summary.spare_hpp));
                 $('#fcLabaKotorFormula').text(fcFormat(res.summary.laba_kotor_formula));
-                $('#fcFixedExpense').text(fcFormat(res.summary.fixed_expense_total));
-                $('#fcVariableExpense').text(fcFormat(res.summary.variable_expense_total));
-                $('#fcTotalBebanOps').text(fcFormat(res.summary.total_beban_operasional));
                 $('#fcZakat').text(fcFormat(res.summary.zakat));
                 $('#fcGrossProfit').text(fcFormat(res.summary.gross_profit));
+                $('#fcTotalJasaMekanik').text(fcFormat(res.summary.total_jasa_mekanik || 0));
                 
                 // Update chart
                 let labels = res.monthly.map(m => m.label);

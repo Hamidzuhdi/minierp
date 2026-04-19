@@ -52,6 +52,19 @@ function ensure_invoice_user_column(mysqli $conn): void {
     }
 }
 
+function ensure_invoice_status_enum(mysqli $conn): void {
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM invoices LIKE 'status_piutang'");
+    if ($res && ($col = mysqli_fetch_assoc($res))) {
+        $type = (string)($col['Type'] ?? '');
+        if (stripos($type, "'Tidak_Aktif'") === false) {
+            @mysqli_query(
+                $conn,
+                "ALTER TABLE invoices MODIFY COLUMN status_piutang ENUM('Belum Bayar','Sudah Dicicil','Lunas','Tidak_Aktif') NOT NULL DEFAULT 'Belum Bayar'"
+            );
+        }
+    }
+}
+
 function ensure_payment_approval_columns(mysqli $conn): void {
     $checks = [
         'approval_status' => "ALTER TABLE payments ADD COLUMN approval_status ENUM('approved','pending_create','pending_edit','pending_delete','rejected') NOT NULL DEFAULT 'approved' AFTER finance_amount",
@@ -83,7 +96,7 @@ function approved_payment_where_clause(bool $hasApprovalCols, string $alias = 'p
 
 function recalc_invoice_status(mysqli $conn, int $invoiceId, bool $hasApprovalCols): array {
     $approvedCond = approved_payment_where_clause($hasApprovalCols, 'p');
-    $qInv = mysqli_query($conn, "SELECT total FROM invoices WHERE id = $invoiceId LIMIT 1");
+    $qInv = mysqli_query($conn, "SELECT total, status_piutang FROM invoices WHERE id = $invoiceId LIMIT 1");
     $inv = $qInv ? mysqli_fetch_assoc($qInv) : null;
     if (!$inv) {
         return ['success' => false, 'message' => 'Invoice tidak ditemukan'];
@@ -93,6 +106,15 @@ function recalc_invoice_status(mysqli $conn, int $invoiceId, bool $hasApprovalCo
     $paid = (float)(mysqli_fetch_assoc($qPaid)['total_paid'] ?? 0);
     $total = (float)$inv['total'];
     $sisa = $total - $paid;
+
+    if ((string)($inv['status_piutang'] ?? '') === 'Tidak_Aktif') {
+        return [
+            'success' => true,
+            'status' => 'Tidak_Aktif',
+            'total_paid' => $paid,
+            'sisa' => $sisa,
+        ];
+    }
 
     $newStatus = 'Belum Bayar';
     $paidAtSql = 'NULL';
@@ -122,6 +144,7 @@ function recalc_invoice_status(mysqli $conn, int $invoiceId, bool $hasApprovalCo
 
 ensure_payment_approval_columns($conn);
 ensure_invoice_user_column($conn);
+ensure_invoice_status_enum($conn);
 $paymentApprovalColRes = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE 'approval_status'");
 $hasPaymentApprovalCols = $paymentApprovalColRes && mysqli_num_rows($paymentApprovalColRes) > 0;
 
@@ -239,7 +262,7 @@ elseif ($action === 'read') {
     $status = $_GET['status'] ?? '';
     
         $sql = "SELECT i.*, 
-            s.kode_unik_reference as spk_code,
+            s.id as spk_id, s.kode_unik_reference as spk_code, s.revision_number, s.status_spk,
             c.name as customer_name, c.phone as customer_phone,
             v.nomor_polisi, v.merk, v.model,
             u.username as invoice_created_by_name,
@@ -254,7 +277,14 @@ elseif ($action === 'read') {
     
     if (!empty($search)) {
         $search = mysqli_real_escape_string($conn, $search);
-        $conditions[] = "(i.id LIKE '%$search%' OR s.kode_unik_reference LIKE '%$search%' OR c.name LIKE '%$search%' OR v.nomor_polisi LIKE '%$search%')";
+        $conditions[] = "(i.id LIKE '%$search%'
+            OR s.kode_unik_reference LIKE '%$search%'
+            OR (CASE
+                    WHEN s.kode_unik_reference REGEXP '-REV[0-9]+$' THEN SUBSTRING_INDEX(s.kode_unik_reference, '-REV', 1)
+                    ELSE s.kode_unik_reference
+                END) LIKE '%$search%'
+            OR c.name LIKE '%$search%'
+            OR v.nomor_polisi LIKE '%$search%')";
     }
     
     if (!empty($status)) {
@@ -292,7 +322,7 @@ elseif ($action === 'read_one') {
     
     // Get invoice header
         $sql = "SELECT i.*, 
-            s.kode_unik_reference as spk_code, s.tanggal as spk_tanggal, s.keluhan_customer,
+            s.kode_unik_reference as spk_code, s.revision_number, s.tanggal as spk_tanggal, s.keluhan_customer,
             c.name as customer_name, c.phone as customer_phone, c.address as customer_address,
             v.nomor_polisi, v.merk, v.model, v.tahun,
             u.username as invoice_created_by_name,
@@ -404,6 +434,11 @@ elseif ($action === 'create_payment') {
     
     if (!$invoice) {
         echo json_encode(['success' => false, 'message' => 'Invoice tidak ditemukan']);
+        exit;
+    }
+
+    if (($invoice['status_piutang'] ?? '') === 'Tidak_Aktif') {
+        echo json_encode(['success' => false, 'message' => 'Invoice tidak aktif, pembayaran baru tidak diizinkan']);
         exit;
     }
     
@@ -521,12 +556,17 @@ elseif ($action === 'edit_payment') {
     $old_amount = (float)$payment['amount'];
     
     // Get invoice data
-    $sql_invoice = "SELECT total FROM invoices WHERE id = $invoice_id";
+    $sql_invoice = "SELECT total, status_piutang FROM invoices WHERE id = $invoice_id";
     $result_invoice = mysqli_query($conn, $sql_invoice);
     $invoice = mysqli_fetch_assoc($result_invoice);
     
     if (!$invoice) {
         echo json_encode(['success' => false, 'message' => 'Invoice tidak ditemukan']);
+        exit;
+    }
+
+    if (($invoice['status_piutang'] ?? '') === 'Tidak_Aktif') {
+        echo json_encode(['success' => false, 'message' => 'Invoice tidak aktif, pembayaran tidak bisa diubah']);
         exit;
     }
     
@@ -665,6 +705,17 @@ elseif ($action === 'delete_payment') {
     
     $invoice_id = $payment['invoice_id'];
     $amount = (float)$payment['amount'];
+
+    $invCheckRes = mysqli_query($conn, "SELECT status_piutang FROM invoices WHERE id = $invoice_id LIMIT 1");
+    $invCheck = $invCheckRes ? mysqli_fetch_assoc($invCheckRes) : null;
+    if (!$invCheck) {
+        echo json_encode(['success' => false, 'message' => 'Invoice tidak ditemukan']);
+        exit;
+    }
+    if (($invCheck['status_piutang'] ?? '') === 'Tidak_Aktif') {
+        echo json_encode(['success' => false, 'message' => 'Invoice tidak aktif, pembayaran tidak bisa dihapus']);
+        exit;
+    }
 
     
     mysqli_begin_transaction($conn);
