@@ -86,6 +86,15 @@ $is_owner = ($user_role === 'Owner');
                             </select>
                         </div>
                     </div>
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <select class="form-select" id="revisionFilter">
+                                <option value="">Semua SPK</option>
+                                <option value="revisions">Hanya Revisi (SPK-REV1, REV2, dst)</option>
+                                <option value="has_revisions">SPK yang Sudah Memiliki Revisi</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover">
                             <thead>
@@ -94,7 +103,7 @@ $is_owner = ($user_role === 'Owner');
                                     <th>Tanggal</th>
                                     <th>Customer</th>
                                     <th>Kendaraan</th>
-                                    <th>Deskripsi</th>
+                                    <th>Detail</th>
                                     <th>Status</th>
                                     <th>Aksi</th>
                                 </tr>
@@ -386,6 +395,17 @@ $(document).ready(function() {
     loadCustomers();
     loadAllVehiclesForFilter();
     
+    // Check if need to open modal after redirect from revision
+    let urlParams = new URLSearchParams(window.location.search);
+    let openModalId = urlParams.get('open_modal');
+    if (openModalId) {
+        setTimeout(function() {
+            openAnalisaModal(parseInt(openModalId));
+            // Remove parameter from URL
+            window.history.replaceState({}, document.title, '../spk/index.php');
+        }, 500);
+    }
+    
     $('#tanggal').val(new Date().toISOString().split('T')[0]);
     
     let searchTimeout;
@@ -397,6 +417,7 @@ $(document).ready(function() {
     $('#statusFilter').on('change', loadSPKs);
     $('#vehicleFilter').on('change', loadSPKs);
     $('#discountFlowFilter').on('change', loadSPKs);
+    $('#revisionFilter').on('change', loadSPKs);
     $('#discount_amount_requested').on('input', refreshEstimasiBiaya);
     $('#kilometer').on('input', function() {
         this.value = formatKilometerInput(this.value);
@@ -488,9 +509,10 @@ function loadSPKs() {
     let status = $('#statusFilter').val();
     let vehicleId = $('#vehicleFilter').val();
     let discountFlow = $('#discountFlowFilter').val();
+    let revisionFilter = $('#revisionFilter').val();
     
     $.ajax({
-        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&vehicle_id=' + encodeURIComponent(vehicleId) + '&discount_flow=' + encodeURIComponent(discountFlow),
+        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&vehicle_id=' + encodeURIComponent(vehicleId) + '&discount_flow=' + encodeURIComponent(discountFlow) + '&revision_filter=' + encodeURIComponent(revisionFilter),
         type: 'GET',
         dataType: 'json',
         success: function(response) {
@@ -572,7 +594,15 @@ function displaySPKs(spks) {
                 discountBadge = `<div class="mt-1">${getDiscountStatusBadge(spk.discount_status)}</div>`;
             }
             let vehicle = `${spk.nomor_polisi} - ${spk.merk || ''} ${spk.model || ''}`;
-            let kodeCell = `<strong>${spk.kode_unik_reference}</strong>`;
+            
+            // Normalisasi kode agar suffix REV tidak dobel (contoh legacy: -REV1-REV1).
+            let rawKode = String(spk.kode_unik_reference || '');
+            let baseKode = rawKode.replace(/(?:-REV\d+)+$/, '');
+            let displayKode = rawKode;
+            if (spk.revision_number && spk.revision_number > 0) {
+                displayKode = baseKode + '-REV' + spk.revision_number;
+            }
+            let kodeCell = `<strong>${displayKode}</strong>`;
 
             if (needsDiscountAttention) {
                 kodeCell += '<div class="discount-inline-flag"><i class="fas fa-tags"></i> Perlu Review Diskon</div>';
@@ -584,7 +614,7 @@ function displaySPKs(spks) {
                     <td>${formatDate(spk.tanggal)}</td>
                     <td>${spk.customer_name}<br><small class="text-muted">${spk.customer_phone || ''}</small></td>
                     <td>${vehicle}</td>
-                    <td><small>${spk.service_description ? spk.service_description.split('\n').join('<br>') : '-'}</small></td>
+                    <td><small>Mekanik: ${spk.nama_mekanik || '-'}<br>Kilometer: ${spk.kilometer ? spk.kilometer.toLocaleString('id-ID') + ' km' : '-'}</small></td>
                     <td>${statusBadge}${discountBadge}</td>
                     <td>
                         <button class="btn btn-info btn-sm" onclick="viewDetail(${spk.id})" title="Detail">
@@ -615,8 +645,7 @@ function displaySPKs(spks) {
                                 ${!isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dikirim ke Owner')">Dikirim ke Owner</a></li>` : ''}
                                 ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Buat Invoice')">Buat Invoice</a></li>` : ''}
                                 ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Sudah Cetak Invoice')">Sudah Cetak Invoice</a></li>` : ''}
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dibatalkan')">Dibatalkan</a></li>
+                                ${spk.status_spk !== 'Sudah Cetak Invoice' ? `<li><hr class="dropdown-divider"></li><li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dibatalkan')">Dibatalkan</a></li>` : ''}
                             </ul>
                         </div>
                     </td>
@@ -861,9 +890,19 @@ function viewDetail(id) {
                     <hr>
                     
                     <div class="mb-3">
+                        ${!isOwner && spk.status_spk !== 'Sudah Cetak Invoice' ? `
+                        <button class="btn btn-primary btn-lg" onclick="openAnalisaModal(${spk.id})">
+                            <i class="fas fa-edit"></i> Edit Analisa & Estimasi
+                        </button>
+                        ` : ''}
                         ${(isOwner || spk.status_spk === 'Sudah Cetak Invoice') ? `
                         <button class="btn btn-danger btn-lg" onclick="downloadInvoicePDF(${spk.id})">
                             <i class="fas fa-file-pdf"></i> Cetak / Download Invoice PDF
+                        </button>
+                        ` : ''}
+                        ${!isOwner && spk.status_spk !== 'Sudah Cetak Invoice' ? `
+                        <button class="btn btn-outline-danger btn-sm" onclick="downloadEstimasiPDF(${spk.id})" title="Download Estimasi PDF">
+                            <i class="fas fa-file-pdf"></i> Download Estimasi PDF
                         </button>
                         ` : ''}
                         ${isOwner && spk.status_spk !== 'Sudah Cetak Invoice' ? `

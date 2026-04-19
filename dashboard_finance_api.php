@@ -17,11 +17,22 @@ $month_filter = !empty($month_esc) ? "AND DATE_FORMAT(ft.tanggal, '%Y-%m') = '$m
 $month_filter_invoice = !empty($month_esc) ? "AND DATE_FORMAT(i.tanggal, '%Y-%m') = '$month_esc'" : '';
 
 // Summary from ledger (exclude internal transfer from net cashflow)
-$qIn = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'in' $month_filter";
+$qIn = "SELECT COALESCE(SUM(ft.amount), 0) total
+                FROM finance_transactions ft
+                LEFT JOIN invoices i ON ft.reference_type = 'invoice' AND ft.reference_id = i.id
+                WHERE ft.direction = 'in'
+                    AND (ft.reference_type <> 'invoice' OR COALESCE(i.status_piutang, '') <> 'Tidak_Aktif')
+                    $month_filter";
 $qOut = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'out' $month_filter";
 $qPo = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'out' AND ft.category = 'OUT-PO' $month_filter";
 $qOps = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'out' AND ft.reference_type = 'operational' $month_filter";
-$qSpkIn = "SELECT COALESCE(SUM(amount), 0) total FROM finance_transactions ft WHERE ft.direction = 'in' AND ft.reference_type = 'invoice' $month_filter";
+$qSpkIn = "SELECT COALESCE(SUM(ft.amount), 0) total
+                     FROM finance_transactions ft
+                     JOIN invoices i ON i.id = ft.reference_id
+                     WHERE ft.direction = 'in'
+                         AND ft.reference_type = 'invoice'
+                         AND COALESCE(i.status_piutang, '') <> 'Tidak_Aktif'
+                         $month_filter";
 
 $qSalesDiscount = "SELECT COALESCE(SUM(ft.amount), 0) total
                                     FROM finance_transactions ft
@@ -89,6 +100,15 @@ $spare_revenue = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareRevenue))[
 $spare_hpp = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareHpp))['total'];
 $spare_profit = $spare_revenue - $spare_hpp;
 
+// Total jasa mekanik (service) - untuk history/tracking saja
+$spk_month_filter = !empty($month_esc) ? "AND DATE_FORMAT(s.created_at, '%Y-%m') = '$month_esc'" : '';
+$qTotalJasa = "SELECT COALESCE(SUM(ss.qty * ss.harga), 0) total
+               FROM spk_services ss
+               JOIN spk s ON s.id = ss.spk_id
+               WHERE s.status_spk IN ('Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice')
+               $spk_month_filter";
+$total_jasa_mekanik = (float)mysqli_fetch_assoc(mysqli_query($conn, $qTotalJasa))['total'];
+
 $laba_kotor_formula = $total_in - ($sales_discount + $spare_hpp);
 $total_beban_operasional = $fixed_expense_total + $variable_expense_total;
 $zakat = $laba_kotor_formula > 0 ? ($laba_kotor_formula * 0.025) : 0;
@@ -113,9 +133,13 @@ for ($i = 11; $i >= 0; $i--) {
 
 $oldest_month = date('Y-m', strtotime('-11 months'));
 $qMonthly = "SELECT DATE_FORMAT(ft.tanggal, '%Y-%m') bulan,
-                    SUM(CASE WHEN ft.direction = 'in' THEN ft.amount ELSE 0 END) as total_in,
-                    SUM(CASE WHEN ft.direction = 'out' THEN ft.amount ELSE 0 END) as total_out
-             FROM finance_transactions ft
+                SUM(CASE
+                       WHEN ft.direction = 'in'
+                           AND (ft.reference_type <> 'invoice' OR COALESCE(i.status_piutang, '') <> 'Tidak_Aktif')
+                       THEN ft.amount ELSE 0 END) as total_in,
+                SUM(CASE WHEN ft.direction = 'out' THEN ft.amount ELSE 0 END) as total_out
+           FROM finance_transactions ft
+           LEFT JOIN invoices i ON ft.reference_type = 'invoice' AND ft.reference_id = i.id
              WHERE DATE_FORMAT(ft.tanggal, '%Y-%m') >= '$oldest_month'
              GROUP BY DATE_FORMAT(ft.tanggal, '%Y-%m')";
 $resMonthly = mysqli_query($conn, $qMonthly);
@@ -206,6 +230,7 @@ echo json_encode([
         'total_beban_operasional' => $total_beban_operasional,
         'zakat' => $zakat,
         'gross_profit' => $gross_profit,
+        'total_jasa_mekanik' => $total_jasa_mekanik,
         'net_cashflow' => $total_in - $total_out,
         'saldo_akhir' => $saldo_akhir,
     ],

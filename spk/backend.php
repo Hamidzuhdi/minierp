@@ -40,6 +40,111 @@ function spk_insert_discount_history(
     return mysqli_query($conn, $sql) !== false;
 }
 
+function spk_sync_active_invoice_totals(mysqli $conn, int $spkId): void
+{
+    if ($spkId <= 0) {
+        return;
+    }
+
+    $invRes = mysqli_query(
+        $conn,
+        "SELECT id FROM invoices
+         WHERE spk_id = $spkId
+           AND status_piutang <> 'Tidak_Aktif'
+         ORDER BY id DESC
+         LIMIT 1"
+    );
+    $inv = $invRes ? mysqli_fetch_assoc($invRes) : null;
+    if (!$inv) {
+        return;
+    }
+
+    $invoiceId = (int)$inv['id'];
+
+    $colHargaRes = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
+    $hasHargaSatuan = $colHargaRes && mysqli_num_rows($colHargaRes) > 0;
+
+    if ($hasHargaSatuan) {
+        $qItems = "SELECT COALESCE(SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)), 0) AS biaya_sparepart
+                   FROM spk_items si
+                   JOIN spareparts sp ON sp.id = si.sparepart_id
+                   WHERE si.spk_id = $spkId";
+    } else {
+        $qItems = "SELECT COALESCE(SUM(si.qty * sp.harga_jual_default), 0) AS biaya_sparepart
+                   FROM spk_items si
+                   JOIN spareparts sp ON sp.id = si.sparepart_id
+                   WHERE si.spk_id = $spkId";
+    }
+
+    $itemsRes = mysqli_query($conn, $qItems);
+    $itemsRow = $itemsRes ? mysqli_fetch_assoc($itemsRes) : [];
+    $biayaSparepart = (float)($itemsRow['biaya_sparepart'] ?? 0);
+
+    $svcRes = mysqli_query($conn, "SELECT COALESCE(SUM(subtotal), 0) AS biaya_jasa FROM spk_services WHERE spk_id = $spkId");
+    $svcRow = $svcRes ? mysqli_fetch_assoc($svcRes) : [];
+    $biayaJasa = (float)($svcRow['biaya_jasa'] ?? 0);
+
+    $discountAmount = 0.0;
+    $discColRes = mysqli_query($conn, "SHOW COLUMNS FROM invoices LIKE 'discount_amount'");
+    $hasDiscountCol = $discColRes && mysqli_num_rows($discColRes) > 0;
+    if ($hasDiscountCol) {
+        $discRes = mysqli_query($conn, "SELECT COALESCE(discount_amount, 0) AS discount_amount FROM invoices WHERE id = $invoiceId LIMIT 1");
+        $discRow = $discRes ? mysqli_fetch_assoc($discRes) : [];
+        $discountAmount = max(0.0, (float)($discRow['discount_amount'] ?? 0));
+    }
+
+    $subtotal = $biayaSparepart + $biayaJasa;
+    $total = max(0.0, $subtotal - $discountAmount);
+
+    $approvalColRes = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE 'approval_status'");
+    $hasApprovalCol = $approvalColRes && mysqli_num_rows($approvalColRes) > 0;
+    $approvedCond = $hasApprovalCol ? " AND (approval_status = 'approved' OR approval_status IS NULL)" : '';
+    $paidRes = mysqli_query(
+        $conn,
+        "SELECT COALESCE(SUM(amount), 0) AS total_paid, MAX(tanggal) AS last_paid
+         FROM payments
+         WHERE invoice_id = $invoiceId$approvedCond"
+    );
+    $paidRow = $paidRes ? mysqli_fetch_assoc($paidRes) : [];
+    $totalPaid = (float)($paidRow['total_paid'] ?? 0);
+    $lastPaid = $paidRow['last_paid'] ?? null;
+
+    $status = 'Belum Bayar';
+    $paidAtSql = 'NULL';
+    if ($total > 0 && $totalPaid >= $total) {
+        $status = 'Lunas';
+        if (!empty($lastPaid)) {
+            $paidAtSql = "'" . mysqli_real_escape_string($conn, $lastPaid) . "'";
+        }
+    } elseif ($totalPaid > 0) {
+        $status = 'Sudah Dicicil';
+    }
+
+    if ($hasDiscountCol) {
+        mysqli_query(
+            $conn,
+            "UPDATE invoices
+             SET biaya_jasa = $biayaJasa,
+                 biaya_sparepart = $biayaSparepart,
+                 total = $total,
+                 status_piutang = '$status',
+                 paid_at = $paidAtSql
+             WHERE id = $invoiceId"
+        );
+    } else {
+        mysqli_query(
+            $conn,
+            "UPDATE invoices
+             SET biaya_jasa = $biayaJasa,
+                 biaya_sparepart = $biayaSparepart,
+                 total = $total,
+                 status_piutang = '$status',
+                 paid_at = $paidAtSql
+             WHERE id = $invoiceId"
+        );
+    }
+}
+
 // Support both legacy `stok` and new `current_stock` column names.
 $stock_col_check = mysqli_query($conn, "SHOW COLUMNS FROM spareparts LIKE 'current_stock'");
 $sparepart_stock_col = (mysqli_num_rows($stock_col_check) > 0) ? 'current_stock' : 'stok';
@@ -66,6 +171,18 @@ if (!$kilometer_col_res || mysqli_num_rows($kilometer_col_res) === 0) {
 $mekanik_col_res = mysqli_query($conn, "SHOW COLUMNS FROM spk LIKE 'nama_mekanik'");
 if (!$mekanik_col_res || mysqli_num_rows($mekanik_col_res) === 0) {
     @mysqli_query($conn, "ALTER TABLE spk ADD COLUMN nama_mekanik VARCHAR(100) NULL AFTER analisa_mekanik");
+}
+
+// Ensure invoices status supports Tidak_Aktif for revision flow.
+$invoice_status_col_res = mysqli_query($conn, "SHOW COLUMNS FROM invoices LIKE 'status_piutang'");
+if ($invoice_status_col_res && ($invoice_status_col = mysqli_fetch_assoc($invoice_status_col_res))) {
+    $invoice_status_type = (string)($invoice_status_col['Type'] ?? '');
+    if (stripos($invoice_status_type, "'Tidak_Aktif'") === false) {
+        @mysqli_query(
+            $conn,
+            "ALTER TABLE invoices MODIFY COLUMN status_piutang ENUM('Belum Bayar','Sudah Dicicil','Lunas','Tidak_Aktif') NOT NULL DEFAULT 'Belum Bayar'"
+        );
+    }
 }
 
 // CREATE - Buat SPK Baru
@@ -177,6 +294,7 @@ elseif ($action === 'read') {
     $status = $_GET['status'] ?? '';
     $vehicle_id = $_GET['vehicle_id'] ?? '';
     $discount_flow = $_GET['discount_flow'] ?? '';
+    $revision_filter = $_GET['revision_filter'] ?? '';
     
     $sql = "SELECT s.*, 
             c.name as customer_name, c.phone as customer_phone,
@@ -189,7 +307,13 @@ elseif ($action === 'read') {
     
     if (!empty($search)) {
         $search = mysqli_real_escape_string($conn, $search);
-        $conditions[] = "(s.kode_unik_reference LIKE '%$search%' OR c.name LIKE '%$search%' OR v.nomor_polisi LIKE '%$search%')";
+        $conditions[] = "(s.kode_unik_reference LIKE '%$search%'
+            OR (CASE
+                    WHEN s.kode_unik_reference REGEXP '-REV[0-9]+$' THEN SUBSTRING_INDEX(s.kode_unik_reference, '-REV', 1)
+                    ELSE s.kode_unik_reference
+                END) LIKE '%$search%'
+            OR c.name LIKE '%$search%'
+            OR v.nomor_polisi LIKE '%$search%')";
     }
     
     if (!empty($status)) {
@@ -208,6 +332,17 @@ elseif ($action === 'read') {
             $conditions[] = "LOWER(COALESCE(s.discount_status, 'none')) = 'pending'";
         } elseif ($discount_flow === 'has_request') {
             $conditions[] = "COALESCE(s.discount_amount_requested, 0) > 0";
+        }
+    }
+    
+    // Filter untuk revision
+    if (!empty($revision_filter)) {
+        if ($revision_filter === 'revisions') {
+            // Show only SPK yang memiliki revision_of_spk_id (adalah revisi)
+            $conditions[] = "s.revision_of_spk_id IS NOT NULL";
+        } elseif ($revision_filter === 'has_revisions') {
+            // Show only SPK original yang sudah memiliki revisions
+            $conditions[] = "s.id IN (SELECT DISTINCT revision_of_spk_id FROM spk WHERE revision_of_spk_id IS NOT NULL)";
         }
     }
     
@@ -696,6 +831,7 @@ elseif ($action === 'add_service') {
             VALUES ($spk_id, $service_price_id, $qty, $harga)";
     
     if (mysqli_query($conn, $sql)) {
+        spk_sync_active_invoice_totals($conn, $spk_id);
         echo json_encode(['success' => true, 'message' => 'Jasa service berhasil ditambahkan ke SPK']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal menambahkan service: ' . mysqli_error($conn)]);
@@ -705,10 +841,18 @@ elseif ($action === 'add_service') {
 // DELETE SERVICE FROM SPK
 elseif ($action === 'delete_service') {
     $id = (int)$_POST['id'];
+    $spk_id = 0;
+    $svcRes = mysqli_query($conn, "SELECT spk_id FROM spk_services WHERE id = $id LIMIT 1");
+    if ($svcRes && ($svcRow = mysqli_fetch_assoc($svcRes))) {
+        $spk_id = (int)($svcRow['spk_id'] ?? 0);
+    }
     
     $sql = "DELETE FROM spk_services WHERE id = $id";
     
     if (mysqli_query($conn, $sql)) {
+        if ($spk_id > 0) {
+            spk_sync_active_invoice_totals($conn, $spk_id);
+        }
         echo json_encode(['success' => true, 'message' => 'Service berhasil dihapus']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal menghapus service: ' . mysqli_error($conn)]);
@@ -791,6 +935,7 @@ elseif ($action === 'add_sparepart') {
     if (mysqli_query($conn, $sql)) {
         // Decrease stock immediately after item is added.
         mysqli_query($conn, "UPDATE spareparts SET {$sparepart_stock_col} = {$sparepart_stock_col} - $qty WHERE id = $sparepart_id");
+        spk_sync_active_invoice_totals($conn, $spk_id);
         echo json_encode(['success' => true, 'message' => 'Sparepart berhasil ditambahkan ke SPK']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal menambahkan sparepart: ' . mysqli_error($conn)]);
@@ -802,10 +947,11 @@ elseif ($action === 'delete_sparepart') {
     $id = (int)$_POST['id'];
     
     // Get sparepart info to restore stock.
-    $get_item = mysqli_query($conn, "SELECT sparepart_id, qty FROM spk_items WHERE id = $id");
+    $get_item = mysqli_query($conn, "SELECT spk_id, sparepart_id, qty FROM spk_items WHERE id = $id");
     $item = mysqli_fetch_assoc($get_item);
     
     if ($item) {
+        $spk_id = (int)($item['spk_id'] ?? 0);
         // Restore stock.
         mysqli_query($conn, "UPDATE spareparts SET {$sparepart_stock_col} = {$sparepart_stock_col} + {$item['qty']} WHERE id = {$item['sparepart_id']}");
         
@@ -813,6 +959,9 @@ elseif ($action === 'delete_sparepart') {
         $sql = "DELETE FROM spk_items WHERE id = $id";
         
         if (mysqli_query($conn, $sql)) {
+            if ($spk_id > 0) {
+                spk_sync_active_invoice_totals($conn, $spk_id);
+            }
             echo json_encode(['success' => true, 'message' => 'Sparepart berhasil dihapus']);
         } else {
             echo json_encode(['success' => false, 'message' => 'Gagal menghapus sparepart: ' . mysqli_error($conn)]);
@@ -820,6 +969,206 @@ elseif ($action === 'delete_sparepart') {
     } else {
         echo json_encode(['success' => false, 'message' => 'Data tidak ditemukan']);
     }
+}
+
+// CREATE REVISION - Buat SPK revisi dari invoice yang sudah Sudah Cetak Invoice
+elseif ($action === 'create_revision') {
+    // Only Owner can create revisions
+    if ($currentUserRole !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang bisa membuat revisi SPK']);
+        exit;
+    }
+
+    $original_spk_id = (int)($_POST['original_spk_id'] ?? 0);
+    
+    if ($original_spk_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID SPK original tidak valid']);
+        exit;
+    }
+    
+    // Check migration columns untuk pricing di spk_items
+    $col_harga_spk = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
+    $hasSpkItemPriceCol = $col_harga_spk && mysqli_num_rows($col_harga_spk) > 0;
+    
+    // Check migration columns untuk discount di invoices
+    $col_discount_inv = mysqli_query($conn, "SHOW COLUMNS FROM invoices LIKE 'discount_amount'");
+    $hasInvoiceDiscountCol = $col_discount_inv && mysqli_num_rows($col_discount_inv) > 0;
+    
+    // Ambil data SPK original
+    $original_spk_sql = "SELECT s.*, c.name as customer_name, v.nomor_polisi
+                         FROM spk s
+                         JOIN customers c ON s.customer_id = c.id
+                         JOIN vehicles v ON s.vehicle_id = v.id
+                         WHERE s.id = $original_spk_id LIMIT 1";
+    $original_spk_result = mysqli_query($conn, $original_spk_sql);
+    $original_spk = mysqli_fetch_assoc($original_spk_result);
+    
+    if (!$original_spk) {
+        echo json_encode(['success' => false, 'message' => 'SPK original tidak ditemukan']);
+        exit;
+    }
+    
+    if ($original_spk['status_spk'] !== 'Sudah Cetak Invoice') {
+        echo json_encode(['success' => false, 'message' => 'Hanya SPK dengan status "Sudah Cetak Invoice" yang bisa di-revisi']);
+        exit;
+    }
+    
+    // Gunakan root SPK agar urutan revisi konsisten (REV1, REV2, dst) walau source dari SPK revisi.
+    $root_spk_id = (int)($original_spk['revision_of_spk_id'] ?? 0);
+    if ($root_spk_id <= 0) {
+        $root_spk_id = $original_spk_id;
+    }
+
+    // Tentukan revision_number berdasarkan seluruh chain revisi dari root.
+    $max_rev_sql = "SELECT COALESCE(MAX(revision_number), 0) as max_rev
+                    FROM spk
+                    WHERE id = $root_spk_id OR revision_of_spk_id = $root_spk_id";
+    $max_rev_result = mysqli_query($conn, $max_rev_sql);
+    $max_rev_row = mysqli_fetch_assoc($max_rev_result);
+    $next_revision_number = ((int)($max_rev_row['max_rev'] ?? 0)) + 1;
+    
+    // Generate kode SPK revisi: SPK-20260417-0006-REV1 atau SPK-20260417-0006-REV2
+    // Extract base kode tanpa -REV suffix jika sudah ada
+    $original_kode = $original_spk['kode_unik_reference'];
+    if (preg_match('/^(.+)-REV\d+$/', $original_kode, $matches)) {
+        // Sudah ada -REV suffix, ambil base kode
+        $base_kode = $matches[1];
+    } else {
+        // Belum ada -REV suffix, ini adalah original SPK
+        $base_kode = $original_kode;
+    }
+    $new_kode = $base_kode . '-REV' . $next_revision_number;
+    $new_kode_esc = mysqli_real_escape_string($conn, $new_kode);
+    $customer_id = (int)$original_spk['customer_id'];
+    $vehicle_id = (int)$original_spk['vehicle_id'];
+    
+    // Buat SPK revisi baru dengan status langsung "Sudah Cetak Invoice"
+    $insert_spk_sql = "INSERT INTO spk (kode_unik_reference, customer_id, vehicle_id, tanggal, keluhan_customer, 
+                                       analisa_mekanik, nama_mekanik, service_description, saran_service,
+                                       status_spk, revision_of_spk_id, revision_number, created_at)
+                       SELECT '$new_kode_esc', customer_id, vehicle_id, CURDATE(), keluhan_customer,
+                              analisa_mekanik, nama_mekanik, service_description, saran_service,
+                      'Sudah Cetak Invoice', $root_spk_id, $next_revision_number, NOW()
+                       FROM spk WHERE id = $original_spk_id";
+    
+    if (!mysqli_query($conn, $insert_spk_sql)) {
+        echo json_encode(['success' => false, 'message' => 'Gagal membuat SPK revisi: ' . mysqli_error($conn)]);
+        exit;
+    }
+    
+    $new_spk_id = mysqli_insert_id($conn);
+    
+    // Copy semua items dari original SPK
+    $items_sql = "INSERT INTO spk_items (spk_id, sparepart_id, qty, harga_satuan, hpp_satuan)
+                  SELECT $new_spk_id, sparepart_id, qty, harga_satuan, hpp_satuan FROM spk_items 
+                  WHERE spk_id = $original_spk_id";
+    $items_result = mysqli_query($conn, $items_sql);
+    if (!$items_result) {
+        echo json_encode(['success' => false, 'message' => 'Gagal copy items: ' . mysqli_error($conn)]);
+        exit;
+    }
+    
+    // Copy semua services dari original SPK
+    $services_sql = "INSERT INTO spk_services (spk_id, service_price_id, qty, harga)
+                     SELECT $new_spk_id, service_price_id, qty, harga FROM spk_services 
+                     WHERE spk_id = $original_spk_id";
+    $services_result = mysqli_query($conn, $services_sql);
+    if (!$services_result) {
+        echo json_encode(['success' => false, 'message' => 'Gagal copy services: ' . mysqli_error($conn)]);
+        exit;
+    }
+    
+    // Auto-generate invoice baru untuk SPK revisi
+    // Hitung total sparepart dari spk_items (gunakan snapshot harga_satuan jika tersedia)
+    if ($hasSpkItemPriceCol) {
+        $sql_items = "SELECT SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as biaya_sparepart
+                      FROM spk_items si
+                      JOIN spareparts sp ON si.sparepart_id = sp.id
+                      WHERE si.spk_id = $new_spk_id";
+    } else {
+        $sql_items = "SELECT SUM(si.qty * sp.harga_jual_default) as biaya_sparepart
+                      FROM spk_items si
+                      JOIN spareparts sp ON si.sparepart_id = sp.id
+                      WHERE si.spk_id = $new_spk_id";
+    }
+    $result_items = mysqli_query($conn, $sql_items);
+    $items_data = mysqli_fetch_assoc($result_items);
+    $biaya_sparepart = (float)($items_data['biaya_sparepart'] ?? 0);
+    
+    // Hitung total jasa dari spk_services
+    $sql_services = "SELECT SUM(subtotal) as biaya_jasa FROM spk_services WHERE spk_id = $new_spk_id";
+    $result_services = mysqli_query($conn, $sql_services);
+    $services_data = mysqli_fetch_assoc($result_services);
+    $biaya_jasa = (float)($services_data['biaya_jasa'] ?? 0);
+    
+    $subtotal = $biaya_sparepart + $biaya_jasa;
+    $discount_amount = 0; // Revisi tidak inherit discount dari original
+    $total = $subtotal - $discount_amount;
+    
+    // Generate no_invoice unik
+    $prefix = 'INV';
+    $date_code = date('Ymd');
+    $check = mysqli_query($conn, "SELECT COUNT(*) as cnt FROM invoices WHERE DATE(tanggal) = CURDATE()");
+    $row_count = mysqli_fetch_assoc($check);
+    $urutan = $row_count['cnt'] + 1;
+    $no_invoice = $prefix . '-' . $date_code . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
+    
+    // Insert invoice untuk SPK revisi
+    if ($hasInvoiceDiscountCol) {
+        $sql_invoice = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, discount_amount, total, metode_pembayaran, status_piutang, note, user_id, created_at)
+                        VALUES ($new_spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $discount_amount, $total, 'cash', 'Belum Bayar', NULL, " . $currentUserId . ", NOW())";
+    } else {
+        $sql_invoice = "INSERT INTO invoices (spk_id, no_invoice, tanggal, biaya_jasa, biaya_sparepart, total, metode_pembayaran, status_piutang, note, user_id, created_at)
+                        VALUES ($new_spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'cash', 'Belum Bayar', NULL, " . $currentUserId . ", NOW())";
+    }
+    
+    if (!mysqli_query($conn, $sql_invoice)) {
+        echo json_encode(['success' => false, 'message' => 'Gagal membuat invoice revisi: ' . mysqli_error($conn)]);
+        exit;
+    }
+    
+    $invoice_id = mysqli_insert_id($conn);
+
+    // Nonaktifkan invoice lama dari SPK original agar tidak dihitung di dashboard/laba.
+    $inactive_note = mysqli_real_escape_string($conn, 'Dinonaktifkan otomatis karena revisi SPK ' . $new_kode);
+    $sql_inactive_old_invoice = "UPDATE invoices
+                                SET status_piutang = 'Tidak_Aktif',
+                                    note = CONCAT(COALESCE(note, ''), '\n[INACTIVE] {$inactive_note}')
+                                WHERE spk_id = $original_spk_id
+                                  AND id <> $invoice_id
+                                  AND status_piutang <> 'Tidak_Aktif'";
+    mysqli_query($conn, $sql_inactive_old_invoice);
+    
+    // Auto-cancel original SPK (set status to Dibatalkan)
+    $restore_res = mysqli_query($conn, "SELECT sparepart_id, SUM(qty) as qty_total FROM spk_items WHERE spk_id = $original_spk_id GROUP BY sparepart_id");
+    if ($restore_res) {
+        while ($it = mysqli_fetch_assoc($restore_res)) {
+            $sparepart_id = (int)$it['sparepart_id'];
+            $qty_total = (int)$it['qty_total'];
+            mysqli_query($conn, "UPDATE spareparts SET {$sparepart_stock_col} = {$sparepart_stock_col} + $qty_total WHERE id = $sparepart_id");
+        }
+    }
+    
+    // Set original SPK status to Dibatalkan dan tambah note
+    $cancel_msg = "Auto-dibatalkan karena ada SPK Revisi #{$new_kode}";
+    $cancel_msg_esc = mysqli_real_escape_string($conn, $cancel_msg);
+    $sql_cancel = "UPDATE spk SET status_spk = 'Dibatalkan', saran_service = CONCAT(COALESCE(saran_service, ''), '\n[REVISI: {$cancel_msg_esc}]') WHERE id = $original_spk_id";
+    mysqli_query($conn, $sql_cancel);
+    
+    // Audit log
+    $log_msg = "SPK Revisi #{$new_kode} dibuat untuk #{$original_kode} - {$original_spk['customer_name']} ({$original_spk['nomor_polisi']})";
+    $sql_log = "INSERT INTO audit_logs (user_id, action, target_table, target_id, description, created_at)
+                VALUES ({$currentUserId}, 'CREATE_REVISION', 'spk', $new_spk_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())";
+    mysqli_query($conn, $sql_log);
+    
+    echo json_encode([
+        'success' => true,
+        'message' => 'SPK revisi berhasil dibuat dan invoice otomatis digenerate',
+        'spk_id' => $new_spk_id,
+        'invoice_id' => $invoice_id,
+        'no_invoice' => $no_invoice,
+        'kode_spk' => $new_kode
+    ]);
 }
 
 // DELETE SPK (hanya jika belum ada invoice)
