@@ -239,7 +239,7 @@ elseif ($action === 'get_supplier_history') {
 
 // GET SPAREPARTS - Untuk dropdown
 elseif ($action === 'get_spareparts') {
-    $sql = "SELECT id, nama, satuan, harga_beli_default, current_stock FROM spareparts ORDER BY nama ASC";
+    $sql = "SELECT id, kode_sparepart, nama, satuan, harga_beli_default, current_stock FROM spareparts ORDER BY nama ASC";
     $result = mysqli_query($conn, $sql);
     
     $spareparts = [];

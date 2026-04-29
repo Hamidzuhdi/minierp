@@ -491,7 +491,7 @@ function addItemRow() {
     
     let options = '<option value="">-- Pilih Sparepart --</option>';
     spareparts.forEach(function(sp) {
-        options += `<option value="${sp.id}" data-price="${sp.harga_beli_default}" data-satuan="${sp.satuan}">${sp.nama} (${sp.satuan}) - Stock: ${sp.current_stock}</option>`;
+        options += `<option value="${sp.id}" data-price="${sp.harga_beli_default}" data-satuan="${sp.satuan}">[${sp.kode_sparepart}] ${sp.nama} (${sp.satuan}) - Stock: ${sp.current_stock}</option>`;
     });
     const priceInput = `<input type="number" step="0.01" class="form-control item-price" min="0" value="0" required autocomplete="off" oninput="calculateSubtotal(${itemCounter})">`;
     
