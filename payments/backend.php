@@ -3,6 +3,8 @@ session_start();
 require_once '../config.php';
 require_once '../finance_helper.php';
 
+global $conn;
+
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
@@ -519,6 +521,155 @@ elseif ($action === 'create_transfer') {
         mysqli_rollback($conn);
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
+}
+
+elseif ($action === 'export_transactions_pdf') {
+    require_once '../vendor/autoload.php';
+    
+    $from = $_GET['from'] ?? '';
+    $to = $_GET['to'] ?? '';
+    $account = $_GET['account'] ?? '';
+    $direction = $_GET['direction'] ?? '';
+    $category = $_GET['category'] ?? '';
+    $keyword = trim($_GET['keyword'] ?? '');
+
+    $sql = "SELECT ft.*, fa.code as account_code, fa.name as account_name, u.username as created_by_name
+            FROM finance_transactions ft
+            JOIN finance_accounts fa ON ft.account_id = fa.id
+            LEFT JOIN users u ON ft.created_by = u.id";
+
+    $conds = [];
+    if ($from !== '') {
+        $conds[] = "ft.tanggal >= '" . mysqli_real_escape_string($conn, $from) . "'";
+    }
+    if ($to !== '') {
+        $conds[] = "ft.tanggal <= '" . mysqli_real_escape_string($conn, $to) . "'";
+    }
+    if ($account !== '') {
+        $accountEsc = mysqli_real_escape_string($conn, $account);
+        $conds[] = "fa.code = '$accountEsc'";
+    }
+    if ($direction !== '') {
+        $dirEsc = mysqli_real_escape_string($conn, $direction);
+        $conds[] = "ft.direction = '$dirEsc'";
+    }
+    if ($category !== '') {
+        $catEsc = mysqli_real_escape_string($conn, $category);
+        $conds[] = "ft.category = '$catEsc'";
+    }
+    if ($keyword !== '') {
+        $kwEsc = mysqli_real_escape_string($conn, $keyword);
+        $conds[] = "(ft.note LIKE '%$kwEsc%' OR ft.reference_type LIKE '%$kwEsc%' OR ft.reference_id LIKE '%$kwEsc%')";
+    }
+
+    $whereSql = '';
+    if (count($conds) > 0) {
+        $whereSql = " WHERE " . implode(' AND ', $conds);
+        $sql .= $whereSql;
+    }
+
+    $sql .= " ORDER BY ft.tanggal DESC, ft.id DESC LIMIT 1000";
+
+    $res = mysqli_query($conn, $sql);
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $rows[] = $r;
+    }
+
+    $dirLabelMap = [
+        'in' => 'Masuk',
+        'out' => 'Keluar',
+        'transfer_in' => 'Transfer Masuk',
+        'transfer_out' => 'Transfer Keluar'
+    ];
+
+    $html = '<style>
+        body { font-family: Arial, sans-serif; font-size: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #000; padding: 5px; text-align: left; }
+        th { background-color: #f0f0f0; font-weight: bold; }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+    </style>';
+
+    $html .= '<h3>Laporan Histori Mutasi</h3>';
+    $html .= '<p>Tanggal Export: ' . date('d/m/Y H:i:s') . '</p>';
+    
+    $filterInfo = [];
+    if ($from) $filterInfo[] = 'Dari: ' . $from;
+    if ($to) $filterInfo[] = 'Sampai: ' . $to;
+    if ($account) $filterInfo[] = 'Akun: ' . $account;
+    if ($direction) $filterInfo[] = 'Arah: ' . ($dirLabelMap[$direction] ?? $direction);
+    if ($category) $filterInfo[] = 'Kategori: ' . $category;
+    if ($keyword) $filterInfo[] = 'Keyword: ' . $keyword;
+    if (!empty($filterInfo)) {
+        $html .= '<p><strong>Filter:</strong> ' . implode(' | ', $filterInfo) . '</p>';
+    }
+
+    $html .= '<table>';
+    $html .= '<thead><tr>
+        <th>Tanggal</th>
+        <th>Akun</th>
+        <th>Arah</th>
+        <th>Kategori</th>
+        <th>Referensi</th>
+        <th>Catatan</th>
+        <th class="text-right">Jumlah</th>
+    </tr></thead>';
+    $html .= '<tbody>';
+
+    $totalIn = 0;
+    $totalOut = 0;
+    foreach ($rows as $row) {
+        $dirLabel = $dirLabelMap[$row['direction']] ?? $row['direction'];
+        $amount = floatval($row['amount'] ?? 0);
+        $reference = ($row['reference_type'] ?? '-') . ($row['reference_id'] ? (' #' . $row['reference_id']) : '');
+        
+        // Sum by direction
+        if (in_array($row['direction'], ['in', 'transfer_in'])) {
+            $totalIn += $amount;
+        } else {
+            $totalOut += $amount;
+        }
+        
+        $html .= '<tr>
+            <td>' . ($row['tanggal'] ?? '-') . '</td>
+            <td>' . ($row['account_name'] ?? '-') . '</td>
+            <td>' . $dirLabel . '</td>
+            <td>' . ($row['category'] ?? '-') . '</td>
+            <td>' . $reference . '</td>
+            <td>' . ($row['note'] ?? '-') . '</td>
+            <td class="text-right">Rp ' . number_format($amount, 0, ',', '.') . '</td>
+        </tr>';
+    }
+
+    $netBalance = $totalIn - $totalOut;
+    $html .= '<tr style="background-color: #e8f5e9;">
+        <td colspan="6" class="text-right"><strong>Total Masuk:</strong></td>
+        <td class="text-right"><strong>Rp ' . number_format($totalIn, 0, ',', '.') . '</strong></td>
+    </tr>';
+    $html .= '<tr style="background-color: #ffebee;">
+        <td colspan="6" class="text-right"><strong>Total Keluar:</strong></td>
+        <td class="text-right"><strong>Rp ' . number_format($totalOut, 0, ',', '.') . '</strong></td>
+    </tr>';
+    $html .= '<tr style="background-color: #f0f0f0; font-weight: bold;">
+        <td colspan="6" class="text-right">Saldo Akhir (Masuk - Keluar):</td>
+        <td class="text-right">Rp ' . number_format($netBalance, 0, ',', '.') . '</td>
+    </tr>';
+    $html .= '</tbody></table>';
+
+    $mpdf = new \Mpdf\Mpdf([
+        'mode' => 'utf-8',
+        'format' => 'A4',
+        'margin_left' => 10,
+        'margin_right' => 10,
+        'margin_top' => 10,
+        'margin_bottom' => 10,
+    ]);
+    
+    $mpdf->WriteHTML($html);
+    $filename = 'Histori_Mutasi_' . date('Y-m-d_His') . '.pdf';
+    $mpdf->Output($filename, 'D');
 }
 
 else {

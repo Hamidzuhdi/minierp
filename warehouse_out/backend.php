@@ -2,6 +2,8 @@
 session_start();
 require_once '../config.php';
 
+global $conn;
+
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;

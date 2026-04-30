@@ -3,6 +3,8 @@ session_start();
 require_once '../config.php';
 require_once '../finance_helper.php';
 
+global $conn;
+
 // Pastikan user sudah login
 if (!isset($_SESSION['user_id'])) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
