@@ -1,6 +1,8 @@
 <?php
 require 'config.php';
 
+global $conn;
+
 $sql = "SELECT id FROM purchases ORDER BY id DESC LIMIT 1";
 $result = mysqli_query($conn, $sql);
 $row = mysqli_fetch_assoc($result);

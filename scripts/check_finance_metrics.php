@@ -1,6 +1,8 @@
 <?php
 require __DIR__ . '/../config.php';
 
+global $conn;
+
 $qIn = "SELECT COALESCE(SUM(amount),0) total FROM finance_transactions WHERE direction='in'";
 $qOut = "SELECT COALESCE(SUM(amount),0) total FROM finance_transactions WHERE direction='out'";
 $qSp = "SELECT COALESCE(SUM(si.qty * COALESCE(NULLIF(si.harga_satuan,0), sp.harga_jual_default)),0) total

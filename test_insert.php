@@ -1,6 +1,8 @@
 <?php
 require 'config.php';
 
+global $conn;
+
 // Create a test purchase first
 $test_tanggal = date('Y-m-d');
 mysqli_query($conn, "INSERT INTO purchases (tanggal, supplier, total, status, is_paid, created_by) VALUES ('$test_tanggal', 'TEST SUPPLIER', 0, 'Pending Approval', 'Belum Bayar', 1)");

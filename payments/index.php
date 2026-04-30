@@ -104,6 +104,7 @@ include '../header.php';
                         <button class="btn btn-sm btn-outline-secondary quick-range-btn" data-range="week" type="button" onclick="applyQuickRange('week')">Minggu Ini</button>
                         <button class="btn btn-sm btn-outline-secondary quick-range-btn" data-range="month" type="button" onclick="applyQuickRange('month')">Bulan Ini</button>
                         <button class="btn btn-sm btn-outline-secondary quick-range-btn" data-range="all" type="button" onclick="applyQuickRange('all')">Semua</button>
+                        <button class="btn btn-sm btn-outline-success ms-auto" type="button" onclick="exportTransactionsPDF()"><i class="fas fa-file-pdf me-1"></i>Export PDF</button>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-md-2"><input type="date" class="form-control form-control-sm" id="f_from"></div>
@@ -747,6 +748,20 @@ function loadTransactions(){
             renderTxPagination(res.pagination || null);
         }
     });
+}
+
+function exportTransactionsPDF() {
+    const params = $.param({
+        action: 'export_transactions_pdf',
+        from: $('#f_from').val(),
+        to: $('#f_to').val(),
+        account: $('#f_account').val(),
+        direction: $('#f_direction').val(),
+        category: $('#f_category').val(),
+        keyword: $('#f_keyword').val()
+    });
+    
+    window.location.href = 'backend.php?' + params;
 }
 
 function renderTxPagination(pagination) {

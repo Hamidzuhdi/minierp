@@ -1,6 +1,8 @@
 <?php
 require 'config.php';
 
+global $conn;
+
 if ($argc < 2) {
     echo "Usage: php check_purchase.php <purchase_id>\n";
     exit;

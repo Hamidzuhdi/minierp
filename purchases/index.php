@@ -113,12 +113,12 @@ $is_owner = ($user_role === 'Owner');
                         <table class="table table-bordered" id="itemsTable">
                             <thead>
                                 <tr>
-                                    <th width="34%">Sparepart</th>
-                                    <th width="12%">Qty</th>
-                                    <th width="16%" class="price-column">Harga Beli</th>
-                                    <th width="15%">Diskon</th>
-                                    <th width="18%" class="price-column">Subtotal</th>
-                                    <th width="5%">
+                                    <th width="50%">Sparepart</th>
+                                    <th width="10%">Qty</th>
+                                    <th width="13%" class="price-column">Harga Beli</th>
+                                    <th width="12%">Diskon</th>
+                                    <th width="12%" class="price-column">Subtotal</th>
+                                    <th width="3%">
                                         <button type="button" class="btn btn-success btn-sm" onclick="addItemRow()">
                                             <i class="fas fa-plus"></i>
                                         </button>
@@ -491,14 +491,18 @@ function addItemRow() {
     
     let options = '<option value="">-- Pilih Sparepart --</option>';
     spareparts.forEach(function(sp) {
-        options += `<option value="${sp.id}" data-price="${sp.harga_beli_default}" data-satuan="${sp.satuan}">[${sp.kode_sparepart}] ${sp.nama} (${sp.satuan}) - Stock: ${sp.current_stock}</option>`;
+        const kode = String(sp.kode_sparepart || '-').trim();
+        const nama = String(sp.nama || '').trim();
+        const displayText = (kode && kode !== '-') ? `${kode} - ${nama}` : nama;
+        const stock = String(sp.current_stock || 0);
+        options += `<option value="${sp.id}" data-price="${sp.harga_beli_default}" data-satuan="${sp.satuan}">${displayText} (${sp.satuan}) - Stock: ${stock}</option>`;
     });
     const priceInput = `<input type="number" step="0.01" class="form-control item-price" min="0" value="0" required autocomplete="off" oninput="calculateSubtotal(${itemCounter})">`;
     
     let html = `
         <tr id="row${itemCounter}" data-counter="${itemCounter}">
             <td>
-                <select class="form-select sparepart-select" required onchange="updatePrice(${itemCounter})">
+                <select class="form-select sparepart-select" id="sparepart_row${itemCounter}" required onchange="updatePrice(${itemCounter})">
                     ${options}
                 </select>
             </td>
@@ -523,6 +527,19 @@ function addItemRow() {
     `;
     
     $('#itemsTableBody').append(html);
+    
+    // Initialize Select2 untuk dropdown sparepart di row baru
+    $(`#sparepart_row${itemCounter}`).select2({
+        theme: 'bootstrap-5',
+        placeholder: 'Cari / Pilih Sparepart...',
+        allowClear: false,
+        width: '100%',
+        dropdownParent: $('#purchaseModal'),
+        language: {
+            noResults: function() { return 'Sparepart tidak ditemukan'; }
+        }
+    });
+    
     itemCounter++;
     savePurchaseDraft();
 }
@@ -579,6 +596,10 @@ function calculateGrandTotal() {
 
 // Hapus baris item
 function removeItemRow(rowId) {
+    const select2Element = $(`#sparepart_row${rowId}`);
+    if (select2Element.data('select2')) {
+        select2Element.select2('destroy');
+    }
     $(`#row${rowId}`).remove();
     calculateGrandTotal();
     savePurchaseDraft();
@@ -979,7 +1000,14 @@ function tryRestorePurchaseDraft() {
             const row = $('#itemsTableBody tr').last();
             const rowCounter = row.data('counter');
 
-            row.find('.sparepart-select').val(item.sparepart_id || '');
+            const sparepartSelect = row.find('.sparepart-select');
+            sparepartSelect.val(item.sparepart_id || '');
+            
+            // Trigger Select2 to refresh displayed value
+            if (sparepartSelect.data('select2')) {
+                sparepartSelect.trigger('change');
+            }
+            
             row.find('.item-qty').val(item.qty || '1');
             row.find('.item-price').val(item.harga_beli || '0');
             row.find('.item-discount').val(item.discount_amount || '0');
