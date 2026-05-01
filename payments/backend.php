@@ -260,6 +260,7 @@ elseif ($action === 'read_account_expenses') {
     $accountCode = trim($_GET['account_code'] ?? '');
     $from = $_GET['from'] ?? '';
     $to = $_GET['to'] ?? '';
+    $direction = trim($_GET['direction'] ?? '');
     $status = trim($_GET['status'] ?? '');
     $keyword = trim($_GET['keyword'] ?? '');
     if ($accountCode === '') {
@@ -269,9 +270,14 @@ elseif ($action === 'read_account_expenses') {
 
     $accountCodeEsc = mysqli_real_escape_string($conn, $accountCode);
     $conds = [
-        "fa.code = '$accountCodeEsc'",
-        "ft.direction = 'out'"
+        "fa.code = '$accountCodeEsc'"
     ];
+
+    // Add direction filter if specified
+    if ($direction !== '') {
+        $directionEsc = mysqli_real_escape_string($conn, $direction);
+        $conds[] = "ft.direction = '$directionEsc'";
+    }
 
     if ($from !== '') {
         $conds[] = "ft.tanggal >= '" . mysqli_real_escape_string($conn, $from) . "'";
