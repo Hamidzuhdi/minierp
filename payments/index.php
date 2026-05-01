@@ -272,6 +272,15 @@ include '../header.php';
                         <input type="date" class="form-control form-control-sm" id="ex_to" placeholder="Sampai tanggal">
                     </div>
                     <div class="col-md-2">
+                        <select class="form-select form-select-sm" id="ex_direction">
+                            <option value="">Semua (Masuk/Keluar)</option>
+                            <option value="in">Masuk</option>
+                            <option value="out">Keluar</option>
+                            <option value="transfer_in">Transfer Masuk</option>
+                            <option value="transfer_out">Transfer Keluar</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
                         <select class="form-select form-select-sm" id="ex_status">
                             <option value="">Semua Status</option>
                             <option value="approved">approved</option>
@@ -279,8 +288,8 @@ include '../header.php';
                             <option value="rejected">rejected</option>
                         </select>
                     </div>
-                    <div class="col-md-4">
-                        <input type="text" class="form-control form-control-sm" id="ex_keyword" placeholder="Cari catatan/ref/kategori...">
+                    <div class="col-md-2">
+                        <input type="text" class="form-control form-control-sm" id="ex_keyword" placeholder="Cari catatan/ref...">
                     </div>
                     <div class="col-md-2 d-grid">
                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadAccountExpenses()">Filter</button>
@@ -291,6 +300,7 @@ include '../header.php';
                         <thead class="table-light">
                             <tr>
                                 <th>Tanggal</th>
+                                <th>Arah</th>
                                 <th>Status</th>
                                 <th>Kategori</th>
                                 <th>Ref</th>
@@ -615,9 +625,10 @@ function openAccountExpenseModal(accountCode, accountLabel) {
     $('#accountExpenseTitle').text('Detail Pengeluaran - ' + accountLabel);
     $('#ex_from').val('');
     $('#ex_to').val('');
+    $('#ex_direction').val('');
     $('#ex_status').val('');
     $('#ex_keyword').val('');
-    $('#accountExpenseBody').html('<tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>');
+    $('#accountExpenseBody').html('<tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>');
 
     if (window.bootstrap && bootstrap.Modal) {
         const modalEl = document.getElementById('accountExpenseModal');
@@ -640,32 +651,44 @@ function loadAccountExpenses() {
         account_code: currentExpenseAccountCode,
         from: $('#ex_from').val(),
         to: $('#ex_to').val(),
+        direction: $('#ex_direction').val(),
         status: $('#ex_status').val(),
         keyword: $('#ex_keyword').val()
     });
 
     $.getJSON('backend.php?' + query, function(res) {
         if (!res.success) {
-            $('#accountExpenseBody').html('<tr><td colspan="7" class="text-center text-danger">' + (res.message || 'Gagal memuat data') + '</td></tr>');
+            $('#accountExpenseBody').html('<tr><td colspan="8" class="text-center text-danger">' + (res.message || 'Gagal memuat data') + '</td></tr>');
             return;
         }
 
         let html = '';
         if (!res.data.length) {
-            html = '<tr><td colspan="7" class="text-center text-muted">Belum ada data pengeluaran</td></tr>';
+            html = '<tr><td colspan="8" class="text-center text-muted">Belum ada data</td></tr>';
         } else {
             res.data.forEach(function(row) {
                 const amount = parseFloat(row.amount || 0);
                 const reference = (row.reference_type || '-') + (row.reference_id ? (' #' + row.reference_id) : '');
                 const creator = row.created_by_name || (row.created_by ? ('User #' + row.created_by) : '-');
+                const dirLabelMap = {
+                    in: 'Masuk',
+                    out: 'Keluar',
+                    transfer_in: 'Transfer Masuk',
+                    transfer_out: 'Transfer Keluar'
+                };
+                const dirLabel = dirLabelMap[row.direction] || row.direction;
+                const isOut = (row.direction === 'out' || row.direction === 'transfer_out');
+                const cls = isOut ? 'text-danger' : 'text-success';
+                const sign = isOut ? '-' : '+';
                 html += `<tr>
                     <td>${row.tanggal || '-'}</td>
+                    <td>${dirLabel}</td>
                     <td>${getStatusBadgeHtml(row.status)}</td>
                     <td>${row.category || '-'}</td>
                     <td>${reference}</td>
                     <td>${creator}</td>
                     <td>${row.note || '-'}</td>
-                    <td class="text-end text-danger">-${fmt(amount)}</td>
+                    <td class="text-end ${cls}">${sign}${fmt(amount)}</td>
                 </tr>`;
             });
         }

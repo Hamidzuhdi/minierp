@@ -1141,6 +1141,21 @@ elseif ($action === 'create_revision') {
                                   AND status_piutang <> 'Tidak_Aktif'";
     mysqli_query($conn, $sql_inactive_old_invoice);
     
+    // Auto-cleanup: Delete finance_transactions and payments for the old invoices
+    $old_invoices_res = mysqli_query($conn, "SELECT id FROM invoices 
+                                             WHERE spk_id = $original_spk_id 
+                                             AND id <> $invoice_id 
+                                             AND status_piutang = 'Tidak_Aktif'");
+    if ($old_invoices_res) {
+        while ($old_inv = mysqli_fetch_assoc($old_invoices_res)) {
+            $old_inv_id = (int)$old_inv['id'];
+            // Delete payments first (foreign key constraint)
+            mysqli_query($conn, "DELETE FROM payments WHERE invoice_id = $old_inv_id");
+            // Delete finance transactions
+            mysqli_query($conn, "DELETE FROM finance_transactions WHERE reference_type='invoice' AND reference_id=$old_inv_id");
+        }
+    }
+    
     // Auto-cancel original SPK (set status to Dibatalkan)
     $restore_res = mysqli_query($conn, "SELECT sparepart_id, SUM(qty) as qty_total FROM spk_items WHERE spk_id = $original_spk_id GROUP BY sparepart_id");
     if ($restore_res) {
