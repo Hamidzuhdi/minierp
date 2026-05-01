@@ -400,7 +400,7 @@ if ($is_owner) {
     <!-- Stat Cards -->
     <div class="row g-3 mb-4" id="financeCardsRow">
         <div class="col-lg-3 col-md-4 col-sm-6">
-            <div class="card border-0 shadow-sm bg-primary text-white h-100">
+            <div class="card border-0 shadow-sm bg-success text-white h-100">
                 <div class="card-body p-3">
                     <div class="small mb-1">Cashflow Masuk</div>
                     <div class="fw-bold" id="fcTotalIn">-</div>
@@ -410,7 +410,23 @@ if ($is_owner) {
         <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-danger text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Kategori Pengeluaran (Sales Discount)</div>
+                    <div class="small mb-1">Cashflow Keluar</div>
+                    <div class="fw-bold" id="fcTotalOut">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm bg-info text-white h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Net Cashflow</div>
+                    <div class="fw-bold" id="fcNetCashflow">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm bg-warning text-dark h-100">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Sales Discount</div>
                     <div class="fw-bold" id="fcSalesDiscount">-</div>
                 </div>
             </div>
@@ -569,6 +585,8 @@ if ($is_owner) {
                 
                 // Update cards
                 $('#fcTotalIn').text(fcFormat(res.summary.total_in));
+                $('#fcTotalOut').text(fcFormat(res.summary.total_out));
+                $('#fcNetCashflow').text(fcFormat(res.summary.net_cashflow));
                 $('#fcSalesDiscount').text(fcFormat(res.summary.sales_discount));
                 $('#fcSpareHpp').text(fcFormat(res.summary.spare_hpp));
                 $('#fcLabaKotorFormula').text(fcFormat(res.summary.laba_kotor_formula));
