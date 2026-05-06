@@ -679,7 +679,7 @@ function viewDetail(id) {
                     if (isOwner) {
                         itemsHtml += `
                             <tr>
-                                <td>${item.sparepart_name}</td>
+                                <td>[${item.kode_sparepart}] ${item.sparepart_name}</td>
                                 <td>${item.qty} ${item.satuan}</td>
                                 <td>Rp ${formatNumber(item.harga_beli)}</td>
                                 <td>Rp ${formatNumber(item.discount_amount || 0)}</td>
@@ -689,7 +689,7 @@ function viewDetail(id) {
                     } else {
                         itemsHtml += `
                             <tr>
-                                <td>${item.sparepart_name}</td>
+                                <td>[${item.kode_sparepart}] ${item.sparepart_name}</td>
                                 <td>${item.qty} ${item.satuan}</td>
                             </tr>
                         `;
