@@ -197,7 +197,7 @@ elseif ($action === 'read_one') {
     
     if ($row = mysqli_fetch_assoc($result)) {
         // Get purchase items
-        $sql_items = "SELECT pi.*, s.nama as sparepart_name, s.satuan,
+        $sql_items = "SELECT pi.*, s.nama as sparepart_name, s.satuan, s.kode_sparepart,
                   GREATEST((pi.qty * pi.harga_beli) - COALESCE(pi.discount_amount, 0), 0) as subtotal_calc
                       FROM purchase_items pi
                       JOIN spareparts s ON pi.sparepart_id = s.id
