@@ -41,7 +41,7 @@ $is_admin = ($user_role === 'Admin');
                 <div class="card-body">
                     <div class="row mb-3">
                         <div class="col-md-8">
-                            <input type="text" class="form-control" id="searchInput" placeholder="Cari nama atau barcode...">
+                            <input type="text" class="form-control" id="searchInput" placeholder="Cari nama atau kode sparepart...">
                         </div>
                         <div class="col-md-4">
                             <div class="form-check">
