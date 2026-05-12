@@ -1049,3 +1049,59 @@ function showAlert(type, message) {
     }, 3000);
 }
 </script>
+
+<style>
+/* Word wrapping untuk kolom Sparepart di modal Tambah Purchase */
+#itemsTable {
+    table-layout: fixed;
+}
+
+#itemsTable td:first-child {
+    white-space: normal !important;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-width: 400px;
+    padding: 8px !important;
+    vertical-align: middle;
+    overflow: visible !important;
+}
+
+#itemsTable tbody tr {
+    height: auto;
+}
+
+#itemsTable .sparepart-select {
+    min-height: auto;
+}
+
+/* Select2 dropdown styling untuk text wrapping */
+.select2-container--bootstrap-5 .select2-results__option {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    padding: 6px 8px;
+}
+
+/* Select2 rendered text (selected value) */
+.select2-container--bootstrap-5 .select2-selection__rendered {
+    padding: 6px 6px !important;
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    display: block !important;
+    height: auto !important;
+    min-height: 38px;
+    line-height: 1.4;
+    overflow: visible !important;
+}
+
+.select2-container--bootstrap-5.select2-container--open .select2-selection__rendered {
+    white-space: normal !important;
+}
+
+.select2-selection__arrow {
+    top: 0 !important;
+}
+</style>
