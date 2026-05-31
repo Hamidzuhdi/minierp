@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 $page_title = "Manajemen Customer";
 include '../header.php';
 
-$reminder_from_query = (($_GET['reminder'] ?? '') === '1') ? '1' : '0';
+$reminder_from_query = (($_GET['reminder'] ?? '') === '1' || ($_GET['reminder'] ?? '') === '2months') ? '1' : ($_GET['reminder'] ?? '0');
 ?>
 
 <div class="container-fluid py-4">
@@ -32,7 +32,9 @@ $reminder_from_query = (($_GET['reminder'] ?? '') === '1') ? '1' : '0';
                         <div class="col-md-4">
                             <select class="form-select" id="reminderFilter">
                                 <option value="0">Semua Customer</option>
+                                <option value="7days">Reminder Customer (>= 7 Hari)</option>
                                 <option value="1">Reminder Customer (>= 2 Bulan)</option>
+                                <option value="6months">Reminder Customer (>= 6 Bulan)</option>
                             </select>
                         </div>
                     </div>
@@ -320,6 +322,7 @@ function viewCustomerDetail(id) {
             if (response.success) {
                 let customer = response.data.customer;
                 let vehicles = response.data.vehicles || [];
+                let lastSpk = response.data.last_spk;
                 
                 let html = `
                     <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-user"></i> Informasi Customer</h6>
@@ -329,7 +332,28 @@ function viewCustomerDetail(id) {
                         <tr><th>Alamat:</th><td>${customer.address || '-'}</td></tr>
                         <tr><th>Dibuat:</th><td>${formatDateTime(customer.created_at)}</td></tr>
                     </table>
-                    
+                `;
+                
+                // Tampilkan SPK terakhir jika ada
+                if (lastSpk) {
+                    html += `
+                        <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="fas fa-file-invoice"></i> SPK Terakhir</h6>
+                        <table class="table table-sm">
+                            <tr><th width="30%">No. SPK:</th><td><strong>${lastSpk.kode_unik_reference}</strong></td></tr>
+                            <tr><th>Tanggal:</th><td>${formatDate(lastSpk.tanggal)}</td></tr>
+                            <tr><th>Keluhan:</th><td>${lastSpk.keluhan_customer || '-'}</td></tr>
+                            <tr><th>Status:</th><td><span class="badge bg-info">${lastSpk.status_spk}</span></td></tr>
+                            <tr><th>Dibuat:</th><td>${formatDateTime(lastSpk.created_at)}</td></tr>
+                        </table>
+                        <a href="../spk/index.php?edit_id=${lastSpk.id}" class="btn btn-sm btn-primary" target="_blank">
+                            <i class="fas fa-external-link-alt"></i> Buka SPK
+                        </a>
+                    `;
+                } else {
+                    html += `<div class="alert alert-info"><small>Belum ada riwayat SPK untuk customer ini.</small></div>`;
+                }
+                
+                html += `
                     <h6 class="border-bottom pb-2 mb-3 mt-4 d-flex justify-content-between align-items-center">
                         <span><i class="fas fa-car"></i> Kendaraan Terdaftar</span>
                         <button type="button" class="btn btn-sm btn-success" onclick="openAddVehicleModal(${customer.id}, true)">
@@ -523,6 +547,13 @@ function formatDateTime(datetime) {
     if (!datetime) return '-';
     let d = new Date(datetime);
     return d.toLocaleDateString('id-ID') + ' ' + d.toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'});
+}
+
+// Helper: Format date only (YYYY-MM-DD)
+function formatDate(date) {
+    if (!date) return '-';
+    let d = new Date(date);
+    return d.toLocaleDateString('id-ID');
 }
 
 // Helper: Show alert

@@ -58,28 +58,18 @@ while ($row = mysqli_fetch_assoc($resServices)) {
     $total_jasa += (float)($row['subtotal'] ?? 0);
 }
 
-if ($hasHargaCol) {
-    $sqlItems = "SELECT si.qty, sp.nama as sparepart_name, sp.satuan,
-                        COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) as harga,
-                        (si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as subtotal
-                 FROM spk_items si
-                 JOIN spareparts sp ON sp.id = si.sparepart_id
-                 WHERE si.spk_id = $spk_id
-                 ORDER BY si.id ASC";
-} else {
-    $sqlItems = "SELECT si.qty, sp.nama as sparepart_name, sp.satuan,
-                        sp.harga_jual_default as harga,
-                        (si.qty * sp.harga_jual_default) as subtotal
-                 FROM spk_items si
-                 JOIN spareparts sp ON sp.id = si.sparepart_id
-                 WHERE si.spk_id = $spk_id
-                 ORDER BY si.id ASC";
-}
+// Get sparepart items - gunakan GENERATED subtotal column yang handle custom price
+$sqlItems = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default
+             FROM spk_items si
+             JOIN spareparts sp ON sp.id = si.sparepart_id
+             WHERE si.spk_id = $spk_id
+             ORDER BY si.id ASC";
 $resItems = mysqli_query($conn, $sqlItems);
 $items = [];
 $total_sparepart = 0;
 while ($row = mysqli_fetch_assoc($resItems)) {
     $items[] = $row;
+    // Use GENERATED subtotal yang sudah handle custom price
     $total_sparepart += (float)($row['subtotal'] ?? 0);
 }
 
@@ -178,10 +168,15 @@ if (count($items) === 0) {
     $html .= '<tr><td colspan="4" class="text-center">Tidak ada sparepart</td></tr>';
 } else {
     foreach ($items as $it) {
+        // Display correct price: custom if enabled, else default
+        $itemCustomEnabled = (int)($it['use_custom_price'] ?? 0) === 1;
+        $customPrice = (float)($it['harga_custom'] ?? 0);
+        $displayPrice = ($itemCustomEnabled && $customPrice > 0) ? $customPrice : (float)$it['harga_jual_default'];
+        
         $html .= '<tr>
             <td>' . htmlspecialchars($it['sparepart_name']) . '</td>
             <td class="text-center">' . (int)$it['qty'] . ' ' . htmlspecialchars($it['satuan']) . '</td>
-            <td class="text-right">' . rupiah($it['harga']) . '</td>
+            <td class="text-right">' . rupiah($displayPrice) . '</td>
             <td class="text-right">' . rupiah($it['subtotal']) . '</td>
         </tr>';
     }

@@ -81,13 +81,18 @@ if ($action === 'create') {
 
     mysqli_begin_transaction($conn);
     try {
-        // Purchase langsung berstatus Approved agar owner fokus ke pembayaran.
+        // Determine status based on user role
+        $user_role = $_SESSION['role'] ?? 'Admin';
+        $status = ($user_role === 'Owner') ? 'Approved' : 'Pending';
+        
+        // Purchase dibuat dengan status sesuai role: Admin=Pending, Owner=Approved
+        // Stock tetap berkurang meskipun pending
         $sql = "INSERT INTO purchases (supplier, tanggal, total, tax_amount, status, is_paid, created_by) 
                 VALUES ('" . mysqli_real_escape_string($conn, $supplier) . "',
                         '" . mysqli_real_escape_string($conn, $tanggal) . "',
                         $total,
                         $tax_amount,
-                        'Approved',
+                        '$status',
                         'Belum Bayar',
                         " . (int)$_SESSION['user_id'] . ")";
 
@@ -333,12 +338,13 @@ elseif ($action === 'update_status') {
     $new_status = $_POST['status'];
     $user_role = $_SESSION['role'] ?? 'Admin';
 
-    if ($user_role !== 'Owner') {
-        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang dapat approve/refund purchase']);
+    // Admin dan Owner bisa refund
+    if (!in_array($user_role, ['Admin', 'Owner'])) {
+        echo json_encode(['success' => false, 'message' => 'Hanya Admin/Owner yang dapat refund purchase']);
         exit;
     }
     
-    // Flow baru: owner hanya butuh aksi refund bila diperlukan.
+    // Flow baru: hanya butuh aksi refund bila diperlukan.
     if ($new_status !== 'Refund') {
         echo json_encode(['success' => false, 'message' => 'Aksi status yang diizinkan hanya Refund']);
         exit;

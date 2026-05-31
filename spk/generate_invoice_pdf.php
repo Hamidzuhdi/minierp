@@ -38,8 +38,8 @@ if (!$row = mysqli_fetch_assoc($result)) {
 $spk = $row;
 
 // Get SPK items (sparepart) dengan harga jual
-$sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
-              (si.qty * sp.harga_jual_default) as subtotal_jual
+// NOTE: Use si.subtotal GENERATED column yang sudah handle custom price logic
+$sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default
               FROM spk_items si
               JOIN spareparts sp ON si.sparepart_id = sp.id
               WHERE si.spk_id = $spk_id";
@@ -49,7 +49,8 @@ $items = [];
 $total_sparepart = 0;
 while ($item = mysqli_fetch_assoc($result_items)) {
     $items[] = $item;
-    $total_sparepart += $item['subtotal_jual'];
+    // Use GENERATED subtotal yang sudah include custom price
+    $total_sparepart += $item['subtotal'];
 }
 
 // Get SPK services (jasa service)
@@ -336,8 +337,14 @@ ob_start();
                 <td><?php echo $item['sparepart_name']; ?></td>
                 <td class="text-center"><?php echo $item['qty']; ?></td>
                 <td class="text-center"><?php echo $item['satuan']; ?></td>
-                <td class="text-right">Rp <?php echo number_format($item['harga_jual_default'], 0, ',', '.'); ?></td>
-                <td class="text-right">Rp <?php echo number_format($item['subtotal_jual'], 0, ',', '.'); ?></td>
+                <?php
+                    // Display correct price: custom if enabled, else default
+                    $itemCustomEnabled = (int)($item['use_custom_price'] ?? 0) === 1;
+                    $customPrice = (float)($item['harga_custom'] ?? 0);
+                    $displayPrice = ($itemCustomEnabled && $customPrice > 0) ? $customPrice : (float)$item['harga_jual_default'];
+                ?>
+                <td class="text-right">Rp <?php echo number_format($displayPrice, 0, ',', '.'); ?></td>
+                <td class="text-right">Rp <?php echo number_format($item['subtotal'], 0, ',', '.'); ?></td>
             </tr>
             <?php 
                 endforeach;

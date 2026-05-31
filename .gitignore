@@ -1,2 +1,27 @@
 *.zip
 config.php
+
+# Test & Debug Files Folder
+coba/
+
+# Temporary & Generated Files
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# IDE & Editor
+.vscode/
+.idea/
+*.code-workspace
+
+# Operating System
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment & Config
+.env
+.env.local
+.env.*.php

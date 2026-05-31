@@ -95,13 +95,29 @@ elseif ($action === 'read') {
         $conditions[] = "(c.name LIKE '%$search%' OR c.phone LIKE '%$search%')";
     }
 
-    if ($reminder === '1') {
+    if ($reminder === '7days') {
+        $conditions[] = "EXISTS (
+            SELECT 1
+            FROM spk s
+            WHERE s.customer_id = c.id
+              AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
+              AND DATE_ADD(DATE(s.created_at), INTERVAL 7 DAY) <= CURDATE()
+        )";
+    } elseif ($reminder === '1' || $reminder === '2months') {
         $conditions[] = "EXISTS (
             SELECT 1
             FROM spk s
             WHERE s.customer_id = c.id
               AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
               AND DATE_ADD(DATE(s.created_at), INTERVAL 2 MONTH) <= CURDATE()
+        )";
+    } elseif ($reminder === '6months') {
+        $conditions[] = "EXISTS (
+            SELECT 1
+            FROM spk s
+            WHERE s.customer_id = c.id
+              AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
+              AND DATE_ADD(DATE(s.created_at), INTERVAL 6 MONTH) <= CURDATE()
         )";
     }
 
@@ -164,11 +180,22 @@ elseif ($action === 'read_one_with_vehicles') {
             $vehicles[] = $row;
         }
         
+        // Get SPK terakhir
+        $sql_spk = "SELECT id, kode_unik_reference, tanggal, keluhan_customer, status_spk, created_at 
+                    FROM spk 
+                    WHERE customer_id = $id 
+                      AND LOWER(COALESCE(status_spk, '')) <> 'dibatalkan'
+                    ORDER BY created_at DESC 
+                    LIMIT 1";
+        $result_spk = mysqli_query($conn, $sql_spk);
+        $last_spk = mysqli_fetch_assoc($result_spk);
+        
         echo json_encode([
             'success' => true, 
             'data' => [
                 'customer' => $customer,
-                'vehicles' => $vehicles
+                'vehicles' => $vehicles,
+                'last_spk' => $last_spk
             ]
         ]);
     } else {

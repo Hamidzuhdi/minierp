@@ -43,6 +43,24 @@ $is_owner = ($user_role === 'Owner');
         background: #ffe08a;
         color: #7a5200;
     }
+
+    /* Custom Toggle Switch Styling */
+    .custom-price-toggle {
+        width: 45px;
+        height: 24px;
+        cursor: pointer !important;
+        background-color: #6c757d !important;
+        border-color: #6c757d !important;
+    }
+
+    .custom-price-toggle:checked {
+        background-color: #28a745 !important;
+        border-color: #28a745 !important;
+    }
+
+    .custom-price-toggle:focus {
+        box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25) !important;
+    }
 </style>
 
 <div class="container-fluid py-4">
@@ -75,6 +93,8 @@ $is_owner = ($user_role === 'Owner');
                                 <option value="Dikirim ke Owner">Dikirim ke Owner</option>
                                 <option value="Buat Invoice">Buat Invoice</option>
                                 <option value="Sudah Cetak Invoice">Sudah Cetak Invoice</option>
+                                <option value="Sudah Reminder WA">Sudah Reminder WA</option>
+                                <option value="Sudah FU">Sudah FU</option>
                                 <option value="Dibatalkan">Dibatalkan</option>
                             </select>
                         </div>
@@ -382,6 +402,32 @@ $is_owner = ($user_role === 'Owner');
     </div>
 </div>
 
+<!-- Modal Edit Harga Khusus Sparepart -->
+<div class="modal fade" id="editPriceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Harga Khusus - <span id="editPriceItemName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editPriceItemId">
+                <input type="hidden" id="editPriceQty">
+                
+                <div class="mb-3">
+                    <label for="editPriceValue" class="form-label">Harga per Unit (Rp)</label>
+                    <input type="number" class="form-control form-control-lg" id="editPriceValue" inputmode="decimal" min="0" step="1000" placeholder="0">
+                    <small class="text-muted" id="editPriceTotalPreview">Total: Rp 0</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-primary" onclick="saveItemCustomPrice()">Simpan Harga</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php include '../footer.php'; ?>
 
 <script>
@@ -403,6 +449,16 @@ $(document).ready(function() {
             openAnalisaModal(parseInt(openModalId));
             // Remove parameter from URL
             window.history.replaceState({}, document.title, '../spk/index.php');
+        }, 500);
+    }
+    
+    // Check if need to open modal from customer detail page (edit_id parameter)
+    let editId = urlParams.get('edit_id');
+    if (editId) {
+        setTimeout(function() {
+            viewDetail(parseInt(editId));
+            // Remove parameter from URL
+            window.history.replaceState({}, document.title, 'index.php');
         }, 500);
     }
     
@@ -512,9 +568,10 @@ function loadSPKs() {
     let revisionFilter = $('#revisionFilter').val();
     
     $.ajax({
-        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&vehicle_id=' + encodeURIComponent(vehicleId) + '&discount_flow=' + encodeURIComponent(discountFlow) + '&revision_filter=' + encodeURIComponent(revisionFilter),
+        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&vehicle_id=' + encodeURIComponent(vehicleId) + '&discount_flow=' + encodeURIComponent(discountFlow) + '&revision_filter=' + encodeURIComponent(revisionFilter) + '&t=' + Date.now(),
         type: 'GET',
         dataType: 'json',
+        cache: false,
         success: function(response) {
             if (response.success) {
                 displaySPKs(response.data);
@@ -623,6 +680,10 @@ function displaySPKs(spks) {
                         <button class="btn btn-warning btn-sm" onclick="openAnalisaModal(${spk.id})" title="Analisa Mekanik">
                             <i class="fas fa-wrench"></i>
                         </button>
+                        <div class="form-check form-switch d-inline-block" style="margin-left: 5px;">
+                            <input class="form-check-input custom-price-toggle" type="checkbox" id="toggle_${spk.id}" ${parseInt(spk.use_custom_price) === 1 ? 'checked' : ''} onchange="toggleCustomPrice(${spk.id}, this.checked ? 1 : 0)" style="cursor: pointer;">
+                            <label class="form-check-label" for="toggle_${spk.id}" style="cursor: pointer; margin-bottom: 0;"></label>
+                        </div>
                         ${spk.status_spk === 'Menunggu Konfirmasi' ? `
                         <button class="btn btn-outline-danger btn-sm" onclick="downloadEstimasiPDF(${spk.id})" title="Download Estimasi PDF">
                             <i class="fas fa-file-pdf"></i>
@@ -645,7 +706,8 @@ function displaySPKs(spks) {
                                 ${!isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dikirim ke Owner')">Dikirim ke Owner</a></li>` : ''}
                                 ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Buat Invoice')">Buat Invoice</a></li>` : ''}
                                 ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Sudah Cetak Invoice')">Sudah Cetak Invoice</a></li>` : ''}
-                                ${spk.status_spk !== 'Sudah Cetak Invoice' ? `<li><hr class="dropdown-divider"></li><li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dibatalkan')">Dibatalkan</a></li>` : ''}
+                                ${['Sudah Cetak Invoice', 'Sudah Reminder WA', 'Sudah FU'].includes(spk.status_spk) ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Sudah Reminder WA')">Sudah Reminder WA</a></li><li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Sudah FU')">Sudah FU</a></li>` : ''}
+                                ${!['Sudah Cetak Invoice', 'Sudah Reminder WA', 'Sudah FU'].includes(spk.status_spk) ? `<li><hr class="dropdown-divider"></li><li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dibatalkan')">Dibatalkan</a></li>` : ''}
                             </ul>
                         </div>
                     </td>
@@ -681,6 +743,8 @@ function getStatusBadge(status) {
         'Dikirim ke Owner': 'secondary',
         'Buat Invoice': 'danger',
         'Sudah Cetak Invoice': 'dark',
+        'Sudah Reminder WA': 'info',
+        'Sudah FU': 'info',
         'Dibatalkan': 'danger'
     };
     return `<span class="badge bg-${badges[status] || 'secondary'}">${status}</span>`;
@@ -860,11 +924,23 @@ function viewDetail(id) {
                 if (spk.items && spk.items.length > 0) {
                     spk.items.forEach(function(item) {
                         let subtotal = parseFloat(item.subtotal) || 0;
+                        // Check if use_custom_price is ON and harga_custom is set
+                        const itemCustomEnabled = parseInt(item.use_custom_price) === 1;
+                        const customPriceVal = parseFloat(item.harga_custom);
+                        const hasCustomPrice = item.harga_custom && customPriceVal > 0;
+                        
+                        let displayPrice;
+                        if (itemCustomEnabled && hasCustomPrice) {
+                            displayPrice = customPriceVal;
+                        } else {
+                            displayPrice = (item.harga_satuan_eff || item.harga_jual_default);
+                        }
+                        
                         html += `
                             <tr>
                                 <td>${item.sparepart_name}</td>
                                 <td>${item.qty} ${item.satuan}</td>
-                                <td>Rp ${formatNumber(item.harga_satuan_eff || item.harga_jual_default)}</td>
+                                <td>Rp ${formatNumber(displayPrice)}</td>
                                 <td>Rp ${formatNumber(subtotal)}</td>
                             </tr>
                         `;
@@ -921,9 +997,10 @@ function viewDetail(id) {
 
 function openAnalisaModal(id) {
     $.ajax({
-        url: 'backend.php?action=read_one&id=' + id,
+        url: 'backend.php?action=read_one&id=' + id + '&t=' + Date.now(),
         type: 'GET',
         dataType: 'json',
+        cache: false,
         success: function(response) {
             if (response.success) {
                 let spk = response.data;
@@ -932,6 +1009,7 @@ function openAnalisaModal(id) {
                 currentSparepartTotal = 0;
                 refreshEstimasiBiaya();
                 $('#analisa_spk_id').val(spk.id);
+                $('#analisaForm').data('use-custom-price', spk.use_custom_price || 0);
                 $('#analisa_mekanik').val(spk.analisa_mekanik || '');
                 $('#nama_mekanik').val(spk.nama_mekanik || '');
                 $('#service_description').val(spk.service_description || '');
@@ -1439,9 +1517,10 @@ function loadServicePrices() {
 
 function loadSPKServices(spkId) {
     $.ajax({
-        url: 'backend.php?action=read_one&id=' + spkId,
+        url: 'backend.php?action=read_one&id=' + spkId + '&t=' + Date.now(),
         type: 'GET',
         dataType: 'json',
+        cache: false,
         success: function(response) {
             if (response.success && response.data.services) {
                 displayServicesList(response.data.services);
@@ -1586,9 +1665,10 @@ function loadSpareparts() {
 
 function loadSPKSpareparts(spkId) {
     $.ajax({
-        url: 'backend.php?action=read_one&id=' + spkId,
+        url: 'backend.php?action=read_one&id=' + spkId + '&t=' + Date.now(),
         type: 'GET',
         dataType: 'json',
+        cache: false,
         success: function(response) {
             if (response.success && response.data.items) {
                 displaySparepartsList(response.data.items);
@@ -1600,18 +1680,51 @@ function loadSPKSpareparts(spkId) {
 function displaySparepartsList(spareparts) {
     let html = '';
     let total = 0;
+    const useCustomPrice = parseInt($('#analisaForm').data('use-custom-price')) || 0;
     
     if (spareparts && spareparts.length > 0) {
         spareparts.forEach(function(sp) {
             let subtotal = parseFloat(sp.subtotal) || 0;
             total += subtotal;
+            // Tampil custom price HANYA jika item punya use_custom_price = 1
+            const itemCustomEnabled = parseInt(sp.use_custom_price) === 1;
+            const customPriceVal = parseFloat(sp.harga_custom);
+            const hasCustomPrice = sp.harga_custom && customPriceVal > 0;
+            
+            let displayPrice;
+            if (itemCustomEnabled && hasCustomPrice) {
+                displayPrice = customPriceVal;
+            } else {
+                displayPrice = (sp.harga_satuan_eff || sp.harga_jual_default);
+            }
+            
+            console.log('=== RENDER: ' + sp.sparepart_name + ' ===');
+            console.log('Raw values:');
+            console.log('  sp.use_custom_price = ' + sp.use_custom_price + ' (typeof: ' + typeof sp.use_custom_price + ')');
+            console.log('  sp.harga_custom = ' + sp.harga_custom);
+            console.log('  sp.harga_satuan_eff = ' + sp.harga_satuan_eff);
+            console.log('Logic:');
+            console.log('  parseInt(sp.use_custom_price) = ' + parseInt(sp.use_custom_price));
+            console.log('  itemCustomEnabled (=== 1?) = ' + itemCustomEnabled);
+            console.log('  customPriceVal = ' + customPriceVal);
+            console.log('  hasCustomPrice (> 0?) = ' + hasCustomPrice);
+            console.log('Decision:');
+            console.log('  displayPrice CHOSEN = ' + displayPrice);
+            console.log('  formatNumber(displayPrice) = ' + formatNumber(displayPrice));
+            console.log('');
+            
             html += `
                 <tr>
                     <td>${sp.sparepart_name}</td>
                     <td>${sp.qty} ${sp.satuan}</td>
-                    <td>Rp ${formatNumber(sp.harga_satuan_eff || sp.harga_jual_default)}</td>
+                    <td>Rp ${formatNumber(displayPrice)}</td>
                     <td>Rp ${formatNumber(subtotal)}</td>
                     <td>
+                        ${useCustomPrice ? `
+                            <button type="button" class="btn btn-primary btn-sm" onclick="editItemPrice(${sp.id}, ${sp.qty}, '${sp.sparepart_name}', ${displayPrice})" title="Edit Harga">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        ` : ''}
                         <button type="button" class="btn btn-danger btn-sm" onclick="deleteSparepartFromSPK(${sp.id})">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -1624,7 +1737,11 @@ function displaySparepartsList(spareparts) {
     }
     
     currentSparepartTotal = total;
+    console.log('=== BEFORE RENDER TO DOM ===');
+    console.log('HTML to inject:', html.substring(0, 200) + '...');
     $('#sparepartListTable').html(html);
+    console.log('=== AFTER RENDER TO DOM ===');
+    console.log('Table HTML now:', $('#sparepartListTable').html().substring(0, 200) + '...');
     $('#totalSparepartCost').html('Rp ' + formatNumber(total));
     refreshEstimasiBiaya();
 }
@@ -1702,6 +1819,103 @@ function deleteSparepartFromSPK(sparepartItemId) {
                 showAlert('success', response.message);
                 loadSPKSpareparts(spkId);
                 loadSpareparts(); // Reload to update stock
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
+}
+
+// TOGGLE CUSTOM PRICE MODE
+function toggleCustomPrice(spkId, useCustom) {
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: {
+            action: 'toggle_custom_price',
+            id: spkId,
+            use_custom: useCustom
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                // Reload SPK list untuk update toggle state
+                loadSPKs();
+                
+                // Delay untuk memastikan database sudah sync
+                setTimeout(function() {
+                    // Jika modal sudah terbuka, reload data di dalamnya
+                    const modalSpkId = parseInt($('#analisa_spk_id').val());
+                    if (modalSpkId === spkId) {
+                        // Update flag di modal DULU sebelum loadSPKSpareparts
+                        $('#analisaForm').data('use-custom-price', useCustom);
+                        // Reload sparepart table dengan data terbaru
+                        loadSPKSpareparts(spkId);
+                    }
+                    
+                    // Jika toggle ON dan modal belum terbuka, buka sekarang
+                    if (useCustom === 1 && !$('#analisaModal').hasClass('show')) {
+                        openAnalisaModal(spkId);
+                    }
+                }, 300);
+            } else {
+                showAlert('danger', response.message);
+                // Revert toggle jika gagal
+                $('#toggle_' + spkId).prop('checked', !useCustom);
+            }
+        }
+    });
+}
+
+// EDIT ITEM CUSTOM PRICE
+function editItemPrice(itemId, qty, itemName, currentPrice) {
+    $('#editPriceItemId').val(itemId);
+    $('#editPriceQty').val(qty);
+    $('#editPriceItemName').text(itemName);
+    $('#editPriceValue').val(currentPrice);
+    
+    // Update preview on input
+    $('#editPriceValue').off('input').on('input', function() {
+        const price = parseFloat($(this).val()) || 0;
+        const total = price * qty;
+        $('#editPriceTotalPreview').text('Total: Rp ' + formatNumber(total));
+    });
+    
+    // Trigger initial preview
+    $('#editPriceValue').trigger('input');
+    
+    $('#editPriceModal').modal('show');
+}
+
+// SAVE CUSTOM PRICE
+function saveItemCustomPrice() {
+    const itemId = parseInt($('#editPriceItemId').val());
+    const hargaCustom = parseFloat($('#editPriceValue').val()) || 0;
+    const qty = parseInt($('#editPriceQty').val());
+    const spkId = parseInt($('#analisa_spk_id').val());
+    
+    if (itemId <= 0 || hargaCustom < 0 || qty <= 0) {
+        showAlert('warning', 'Data tidak valid');
+        return;
+    }
+    
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: {
+            action: 'update_item_custom_price',
+            item_id: itemId,
+            harga_custom: hargaCustom,
+            qty: qty
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                $('#editPriceModal').modal('hide');
+                // loadSPKSpareparts will reload and automatically call refreshEstimasiBiaya()
+                loadSPKSpareparts(spkId);
             } else {
                 showAlert('danger', response.message);
             }

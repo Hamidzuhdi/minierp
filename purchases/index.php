@@ -34,7 +34,7 @@ $is_owner = ($user_role === 'Owner');
                         <div class="col-md-6">
                             <select class="form-select" id="statusFilter">
                                 <option value="">Semua Status</option>
-                                <option value="Pending Approval">Pending Approval</option>
+                                <option value="Pending">Pending</option>
                                 <option value="Approved">Approved</option>
                                 <option value="Refund">Refund</option>
                             </select>
@@ -167,8 +167,7 @@ $is_owner = ($user_role === 'Owner');
     </div>
 </div>
 
-<!-- Modal Edit Purchase (Owner Only) -->
-<?php if ($is_owner): ?>
+<!-- Modal Edit Purchase -->
 <div class="modal fade" id="editPurchaseModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
@@ -215,7 +214,6 @@ $is_owner = ($user_role === 'Owner');
         </div>
     </div>
 </div>
-<?php endif; ?>
 
 <!-- Modal Pembayaran Purchase -->
 <?php if ($is_owner): ?>
@@ -419,8 +417,8 @@ function displayPurchases(purchases) {
     } else {
         purchases.forEach(function(p) {
             let statusBadge = '';
-            if (p.status === 'Pending Approval') {
-                statusBadge = '<span class="badge bg-warning">Pending Approval</span>';
+            if (p.status === 'Pending') {
+                statusBadge = '<span class="badge bg-warning">Pending</span>';
             } else if (p.status === 'Approved') {
                 statusBadge = '<span class="badge bg-success">Approved</span>';
             } else {
@@ -444,9 +442,14 @@ function displayPurchases(purchases) {
                         <button class="btn btn-info btn-sm" onclick="viewDetail(${p.id})" title="Detail">
                             <i class="fas fa-eye"></i>
                         </button>
-                        ${!isOwner && p.status === 'Pending Approval' ? `
-                        <button class="btn btn-danger btn-sm" onclick="deletePurchase(${p.id})" title="Hapus">
-                            <i class="fas fa-trash"></i>
+                        ${p.status === 'Pending' ? `
+                        <button class="btn btn-warning btn-sm" onclick="editPurchase(${p.id})" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        ` : ''}
+                        ${!isOwner && p.status === 'Pending' && p.is_paid === 'Belum Bayar' ? `
+                        <button class="btn btn-danger btn-sm" onclick="updateStatus(${p.id}, 'Refund')" title="Refund">
+                            <i class="fas fa-undo"></i>
                         </button>
                         ` : ''}
                         ${isOwner && p.status !== 'Refund' && p.is_paid === 'Belum Bayar' ? `
@@ -455,7 +458,7 @@ function displayPurchases(purchases) {
                         </button>
                         ` : ''}
                         ${isOwner && p.status !== 'Refund' ? `
-                        <button class="btn btn-warning btn-sm" onclick="updateStatus(${p.id}, 'Refund')" title="Refund">
+                        <button class="btn btn-danger btn-sm" onclick="updateStatus(${p.id}, 'Refund')" title="Refund">
                             <i class="fas fa-undo"></i>
                         </button>
                         ` : ''}
@@ -900,29 +903,6 @@ function updatePayment(id, isPaid, accountCode = '', payDate = '', note = '') {
             }
         }
     });
-}
-
-// Hapus purchase
-function deletePurchase(id) {
-    if (confirm('Yakin ingin menghapus purchase ini?')) {
-        $.ajax({
-            url: 'backend.php',
-            type: 'POST',
-            data: {
-                action: 'delete',
-                id: id
-            },
-            dataType: 'json',
-            success: function(response) {
-                if (response.success) {
-                    showAlert('success', response.message);
-                    loadPurchases();
-                } else {
-                    showAlert('danger', response.message);
-                }
-            }
-        });
-    }
 }
 
 function buildPurchaseDraftPayload() {
