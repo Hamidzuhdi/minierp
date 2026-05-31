@@ -35,6 +35,20 @@ $spk_menunggu = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total
 $spk_pengerjaan = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spk WHERE status_spk = 'Dalam Pengerjaan'"))['total'];
 $spk_selesai = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spk WHERE status_spk IN ('Selesai', 'Dikirim ke owner')"))['total'];
 
+// Entry SPK per hari (created today)
+$spk_per_hari = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spk WHERE DATE(created_at) = CURDATE()"))['total'];
+
+// Entry SPK per bulan (created this month)
+$spk_per_bulan = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spk WHERE YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())"))['total'];
+
+// Customer reminder 7 hari (SPK bukan dibatalkan)
+$customer_reminder_7days_query = "SELECT COUNT(DISTINCT s.customer_id) as total
+                                                                    FROM spk s
+                                                                    WHERE s.customer_id IS NOT NULL
+                                                                        AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
+                                                                        AND DATE_ADD(DATE(s.created_at), INTERVAL 7 DAY) <= CURDATE()";
+$customer_reminder_7days = mysqli_fetch_assoc(mysqli_query($conn, $customer_reminder_7days_query))['total'];
+
 // Customer reminder 2 bulanan (SPK bukan dibatalkan)
 $customer_reminder_count_query = "SELECT COUNT(DISTINCT s.customer_id) as total
                                                                     FROM spk s
@@ -42,10 +56,18 @@ $customer_reminder_count_query = "SELECT COUNT(DISTINCT s.customer_id) as total
                                                                         AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
                                                                         AND DATE_ADD(DATE(s.created_at), INTERVAL 2 MONTH) <= CURDATE()";
 $customer_reminder_count = mysqli_fetch_assoc(mysqli_query($conn, $customer_reminder_count_query))['total'];
+
+// Customer reminder 6 bulanan (SPK bukan dibatalkan)
+$customer_reminder_6months_query = "SELECT COUNT(DISTINCT s.customer_id) as total
+                                                                    FROM spk s
+                                                                    WHERE s.customer_id IS NOT NULL
+                                                                        AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
+                                                                        AND DATE_ADD(DATE(s.created_at), INTERVAL 6 MONTH) <= CURDATE()";
+$customer_reminder_6months = mysqli_fetch_assoc(mysqli_query($conn, $customer_reminder_6months_query))['total'];
 $sparepart_low_stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spareparts WHERE current_stock <= min_stock"))['total'];
 
 // Purchase Stats
-$purchase_pending = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM purchases WHERE status = 'Pending Approval'"))['total'];
+$purchase_pending = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM purchases WHERE status = 'Pending'"))['total'];
 
 // =============================================
 // 2. DASHBOARD OWNER (Owner Only)
@@ -210,10 +232,58 @@ if ($is_owner) {
                 </div>
             </div>
         </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-2">Entry SPK Per Hari</h6>
+                            <h2 class="mb-0"><?php echo $spk_per_hari; ?></h2>
+                        </div>
+                        <div class="bg-primary bg-opacity-10 rounded p-3">
+                            <i class="fas fa-calendar-day fa-2x text-primary"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-2">Entry SPK Per Bulan</h6>
+                            <h2 class="mb-0"><?php echo $spk_per_bulan; ?></h2>
+                        </div>
+                        <div class="bg-secondary bg-opacity-10 rounded p-3">
+                            <i class="fas fa-calendar fa-2x text-secondary"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
     
     <!-- Warehouse & Purchase Section -->
     <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <a href="customers/index.php?reminder=7days" class="text-decoration-none text-reset d-block h-100">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted mb-2">Reminder Customer (7 Hari)</h6>
+                                <h2 class="mb-0"><?php echo $customer_reminder_7days; ?></h2>
+                                <small class="text-warning">Klik untuk lihat detail customer</small>
+                            </div>
+                            <div class="bg-warning bg-opacity-10 rounded p-3">
+                                <i class="fas fa-bell fa-2x text-warning"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
         <div class="col-md-4">
             <a href="customers/index.php?reminder=1" class="text-decoration-none text-reset d-block h-100">
                 <div class="card border-0 shadow-sm h-100">
@@ -226,6 +296,24 @@ if ($is_owner) {
                             </div>
                             <div class="bg-primary bg-opacity-10 rounded p-3">
                                 <i class="fas fa-bell fa-2x text-primary"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-4">
+            <a href="customers/index.php?reminder=6months" class="text-decoration-none text-reset d-block h-100">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted mb-2">Reminder Customer (6 Bulan)</h6>
+                                <h2 class="mb-0"><?php echo $customer_reminder_6months; ?></h2>
+                                <small class="text-danger">Klik untuk lihat detail customer</small>
+                            </div>
+                            <div class="bg-danger bg-opacity-10 rounded p-3">
+                                <i class="fas fa-bell fa-2x text-danger"></i>
                             </div>
                         </div>
                     </div>
@@ -285,11 +373,16 @@ if ($is_owner) {
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card border-0 shadow-sm bg-warning text-white h-100">
+            <div class="card border-0 shadow-sm bg-info text-white h-100 cursor-pointer" onclick="openPiutangModal()" title="Klik untuk download data">
                 <div class="card-body">
-                    <h6 class="mb-2">Total Piutang Aktif</h6>
-                    <h3 class="mb-0">Rp <?php echo number_format($piutang, 0, ',', '.'); ?></h3>
-                    <small>Invoice Belum Lunas</small>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-2 fw-bold">Total Piutang Aktif</h6>
+                            <h3 class="mb-0 fw-bold">Rp <?php echo number_format($piutang, 0, ',', '.'); ?></h3>
+                            <small class="fw-semibold">Invoice Belum Lunas</small>
+                        </div>
+                        <div class="text-white"><i class="fas fa-download"></i></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -432,10 +525,15 @@ if ($is_owner) {
             </div>
         </div>
         <div class="col-lg-3 col-md-4 col-sm-6">
-            <div class="card border-0 shadow-sm bg-warning text-dark h-100">
+            <div class="card border-0 shadow-sm bg-warning text-dark h-100 cursor-pointer" onclick="openHppModal()" title="Klik untuk download data">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Biaya HPP Sparepart</div>
-                    <div class="fw-bold" id="fcSpareHpp">-</div>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="small mb-1">Biaya HPP Sparepart</div>
+                            <div class="fw-bold" id="fcSpareHpp">-</div>
+                        </div>
+                        <div class="small text-muted"><i class="fas fa-download"></i></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -472,10 +570,15 @@ if ($is_owner) {
             </div>
         </div>
         <div class="col-lg-3 col-md-4 col-sm-6">
-            <div class="card border-0 shadow-sm text-white h-100" style="background-color: #9c27b0;">
+            <div class="card border-0 shadow-sm text-white h-100 cursor-pointer" style="background-color: #9c27b0;" onclick="openJasaMekanikModal()" title="Klik untuk download data">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Total Jasa Mekanik</div>
-                    <div class="fw-bold" id="fcTotalJasaMekanik">-</div>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="small mb-1">Total Jasa Mekanik</div>
+                            <div class="fw-bold" id="fcTotalJasaMekanik">-</div>
+                        </div>
+                        <div class="small"><i class="fas fa-download"></i></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -735,5 +838,192 @@ if ($is_owner) {
         </div>
     </div>
 </div>
+
+<!-- ===== EXPORT MODALS ===== -->
+
+<!-- 1. Modal Export Jasa Mekanik -->
+<div class="modal fade" id="jasaMekanikModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Export Jasa Mekanik</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Periode</label>
+                    <div class="row g-2">
+                        <div class="col">
+                            <input type="date" id="jasaFromDate" class="form-control" value="<?php echo date('Y-m-01'); ?>">
+                        </div>
+                        <div class="col">
+                            <input type="date" id="jasaToDate" class="form-control" value="<?php echo date('Y-m-t'); ?>">
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Tampilan</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="jasaViewType" id="jasaDetail" value="detail" checked>
+                        <label class="form-check-label" for="jasaDetail">
+                            Detail (setiap item jasa)
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="jasaViewType" id="jasaAll" value="all">
+                        <label class="form-check-label" for="jasaAll">
+                            Ringkas (per SPK)
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-primary" onclick="exportJasaMekanik()">
+                    <i class="fas fa-download"></i> Download Excel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. Modal Export Biaya HPP Sparepart -->
+<div class="modal fade" id="hppModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Export Biaya HPP Sparepart</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Periode</label>
+                    <div class="row g-2">
+                        <div class="col">
+                            <input type="date" id="hppFromDate" class="form-control" value="<?php echo date('Y-m-01'); ?>">
+                        </div>
+                        <div class="col">
+                            <input type="date" id="hppToDate" class="form-control" value="<?php echo date('Y-m-t'); ?>">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-primary" onclick="exportHpp()">
+                    <i class="fas fa-download"></i> Download Excel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 3. Modal Export Piutang Aktif -->
+<div class="modal fade" id="piutangModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Export Piutang Aktif</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Periode</label>
+                    <div class="row g-2">
+                        <div class="col">
+                            <input type="date" id="piutangFromDate" class="form-control" value="<?php echo date('Y-m-01'); ?>">
+                        </div>
+                        <div class="col">
+                            <input type="date" id="piutangToDate" class="form-control" value="<?php echo date('Y-m-t'); ?>">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-primary" onclick="exportPiutang()">
+                    <i class="fas fa-download"></i> Download Excel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== STYLES ===== -->
+<style>
+.cursor-pointer {
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+.cursor-pointer:hover {
+    transform: translateY(-2px);
+}
+</style>
+
+<!-- ===== SCRIPTS ===== -->
+<script>
+// Modal open functions
+function openJasaMekanikModal() {
+    new bootstrap.Modal(document.getElementById('jasaMekanikModal')).show();
+}
+
+function openHppModal() {
+    new bootstrap.Modal(document.getElementById('hppModal')).show();
+}
+
+function openPiutangModal() {
+    new bootstrap.Modal(document.getElementById('piutangModal')).show();
+}
+
+// Export functions
+function exportJasaMekanik() {
+    const dateFrom = document.getElementById('jasaFromDate').value;
+    const dateTo = document.getElementById('jasaToDate').value;
+    const viewType = document.querySelector('input[name="jasaViewType"]:checked').value;
+    
+    if (!dateFrom || !dateTo) {
+        alert('Silakan pilih tanggal dari dan ke');
+        return;
+    }
+    
+    // Close modal
+    bootstrap.Modal.getInstance(document.getElementById('jasaMekanikModal')).hide();
+    
+    // Trigger download
+    window.location.href = `dashboard_export.php?action=get_jasa_mekanik&export_type=excel&date_from=${dateFrom}&date_to=${dateTo}&view_type=${viewType}`;
+}
+
+function exportHpp() {
+    const dateFrom = document.getElementById('hppFromDate').value;
+    const dateTo = document.getElementById('hppToDate').value;
+    
+    if (!dateFrom || !dateTo) {
+        alert('Silakan pilih tanggal dari dan ke');
+        return;
+    }
+    
+    // Close modal
+    bootstrap.Modal.getInstance(document.getElementById('hppModal')).hide();
+    
+    // Trigger download
+    window.location.href = `dashboard_export.php?action=get_biaya_hpp_sparepart&export_type=excel&date_from=${dateFrom}&date_to=${dateTo}`;
+}
+
+function exportPiutang() {
+    const dateFrom = document.getElementById('piutangFromDate').value;
+    const dateTo = document.getElementById('piutangToDate').value;
+    
+    if (!dateFrom || !dateTo) {
+        alert('Silakan pilih tanggal dari dan ke');
+        return;
+    }
+    
+    // Close modal
+    bootstrap.Modal.getInstance(document.getElementById('piutangModal')).hide();
+    
+    // Trigger download
+    window.location.href = `dashboard_export.php?action=get_piutang_aktif&export_type=excel&date_from=${dateFrom}&date_to=${dateTo}`;
+}
+</script>
 
 <?php include 'footer.php'; ?>

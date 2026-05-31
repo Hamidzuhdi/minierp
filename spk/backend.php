@@ -63,21 +63,11 @@ function spk_sync_active_invoice_totals(mysqli $conn, int $spkId): void
 
     $invoiceId = (int)$inv['id'];
 
-    $colHargaRes = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
-    $hasHargaSatuan = $colHargaRes && mysqli_num_rows($colHargaRes) > 0;
-
-    if ($hasHargaSatuan) {
-        $qItems = "SELECT COALESCE(SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)), 0) AS biaya_sparepart
-                   FROM spk_items si
-                   JOIN spareparts sp ON sp.id = si.sparepart_id
-                   WHERE si.spk_id = $spkId";
-    } else {
-        $qItems = "SELECT COALESCE(SUM(si.qty * sp.harga_jual_default), 0) AS biaya_sparepart
-                   FROM spk_items si
-                   JOIN spareparts sp ON sp.id = si.sparepart_id
-                   WHERE si.spk_id = $spkId";
-    }
-
+    // Use GENERATED subtotal column which respects custom_price
+    $qItems = "SELECT COALESCE(SUM(si.subtotal), 0) AS biaya_sparepart
+               FROM spk_items si
+               WHERE si.spk_id = $spkId";
+    
     $itemsRes = mysqli_query($conn, $qItems);
     $itemsRow = $itemsRes ? mysqli_fetch_assoc($itemsRes) : [];
     $biayaSparepart = (float)($itemsRow['biaya_sparepart'] ?? 0);
@@ -385,9 +375,9 @@ elseif ($action === 'read_one') {
         $has_price_cols = mysqli_num_rows($col_check) > 0;
         
         if ($has_price_cols) {
+            // Use GENERATED column for subtotal - respects custom_price if set
             $sql_items = "SELECT si.*, sp.nama as sparepart_name, sp.satuan, sp.harga_jual_default,
-                          COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) as harga_satuan_eff,
-                          (si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as subtotal
+                          COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) as harga_satuan_eff
                           FROM spk_items si
                           JOIN spareparts sp ON si.sparepart_id = sp.id
                           WHERE si.spk_id = $id";
@@ -783,7 +773,7 @@ elseif ($action === 'update_status') {
     $status = $_POST['status'];
     
     // Validasi status
-    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice', 'Dibatalkan'];
+    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice', 'Sudah Reminder WA', 'Sudah FU', 'Dibatalkan'];
     if (!in_array($status, $valid_statuses)) {
         echo json_encode(['success' => false, 'message' => 'Status tidak valid']);
         exit;
@@ -798,6 +788,15 @@ elseif ($action === 'update_status') {
 
     $old_status = (string)($spk_row['status_spk'] ?? '');
     $target_status = mysqli_real_escape_string($conn, $status);
+
+    // Validasi: Sudah Reminder WA dan Sudah FU hanya bisa diakses dari "Sudah Cetak Invoice", "Sudah Reminder WA", atau "Sudah FU"
+    $follow_up_statuses = ['Sudah Cetak Invoice', 'Sudah Reminder WA', 'Sudah FU'];
+    if (in_array($status, ['Sudah Reminder WA', 'Sudah FU'])) {
+        if (!in_array($old_status, $follow_up_statuses)) {
+            echo json_encode(['success' => false, 'message' => 'Status ' . $status . ' hanya bisa diubah dari status "Sudah Cetak Invoice", "Sudah Reminder WA", atau "Sudah FU"']);
+            exit;
+        }
+    }
 
     // Jika dibatalkan, kembalikan stok sekali (idempotent) saat transisi ke Dibatalkan.
     if ($old_status !== 'Dibatalkan' && $status === 'Dibatalkan') {
@@ -1081,18 +1080,10 @@ elseif ($action === 'create_revision') {
     }
     
     // Auto-generate invoice baru untuk SPK revisi
-    // Hitung total sparepart dari spk_items (gunakan snapshot harga_satuan jika tersedia)
-    if ($hasSpkItemPriceCol) {
-        $sql_items = "SELECT SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as biaya_sparepart
-                      FROM spk_items si
-                      JOIN spareparts sp ON si.sparepart_id = sp.id
-                      WHERE si.spk_id = $new_spk_id";
-    } else {
-        $sql_items = "SELECT SUM(si.qty * sp.harga_jual_default) as biaya_sparepart
-                      FROM spk_items si
-                      JOIN spareparts sp ON si.sparepart_id = sp.id
-                      WHERE si.spk_id = $new_spk_id";
-    }
+    // Hitung total sparepart dari spk_items menggunakan GENERATED subtotal
+    $sql_items = "SELECT SUM(si.subtotal) as biaya_sparepart
+                  FROM spk_items si
+                  WHERE si.spk_id = $new_spk_id";
     $result_items = mysqli_query($conn, $sql_items);
     $items_data = mysqli_fetch_assoc($result_items);
     $biaya_sparepart = (float)($items_data['biaya_sparepart'] ?? 0);
@@ -1191,6 +1182,58 @@ elseif ($action === 'create_revision') {
 // DELETE SPK (hanya jika belum ada invoice)
 elseif ($action === 'delete') {
     echo json_encode(['success' => false, 'message' => 'Hapus SPK dinonaktifkan. Gunakan status Dibatalkan.']);
+}
+
+// TOGGLE CUSTOM PRICE MODE
+elseif ($action === 'toggle_custom_price') {
+    $id = (int)$_POST['id'];
+    $use_custom = (int)($_POST['use_custom'] ?? 0);
+    
+    // Update SPK flag
+    $sql = "UPDATE spk SET use_custom_price = $use_custom WHERE id = $id";
+    if (mysqli_query($conn, $sql)) {
+        // When toggling OFF, also turn off custom pricing for all items in this SPK
+        if ($use_custom == 0) {
+            mysqli_query($conn, "UPDATE spk_items SET use_custom_price = 0 WHERE spk_id = $id");
+        }
+        // Sync invoice totals when toggling custom pricing
+        spk_sync_active_invoice_totals($conn, $id);
+        echo json_encode(['success' => true, 'message' => 'Mode harga khusus ' . ($use_custom ? 'diaktifkan' : 'dinonaktifkan')]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal update mode harga: ' . mysqli_error($conn)]);
+    }
+}
+
+// UPDATE CUSTOM PRICE FOR SPAREPART ITEM
+elseif ($action === 'update_item_custom_price') {
+    $item_id = (int)$_POST['item_id'];
+    $harga_custom = (float)($_POST['harga_custom'] ?? 0);
+    $qty = (int)($_POST['qty'] ?? 0);
+    
+    if ($item_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Item ID tidak valid']);
+        exit;
+    }
+    
+    // Get item data
+    $itemRes = mysqli_query($conn, "SELECT spk_id FROM spk_items WHERE id = $item_id LIMIT 1");
+    $itemRow = $itemRes ? mysqli_fetch_assoc($itemRes) : null;
+    if (!$itemRow) {
+        echo json_encode(['success' => false, 'message' => 'Item tidak ditemukan']);
+        exit;
+    }
+    
+    $spk_id = (int)$itemRow['spk_id'];
+    
+    // Update harga_custom ONLY - subtotal is GENERATED COLUMN, let DB calculate it
+    $sql = "UPDATE spk_items SET harga_custom = $harga_custom, use_custom_price = 1 WHERE id = $item_id";
+    if (mysqli_query($conn, $sql)) {
+        // Sync invoice totals if exists
+        spk_sync_active_invoice_totals($conn, $spk_id);
+        echo json_encode(['success' => true, 'message' => 'Harga khusus berhasil diupdate']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal update harga: ' . mysqli_error($conn)]);
+    }
 }
 
 else {
