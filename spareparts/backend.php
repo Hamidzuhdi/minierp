@@ -84,7 +84,7 @@ elseif ($action === 'read') {
     
     if (!empty($search)) {
         $search = mysqli_real_escape_string($conn, $search);
-        $conditions[] = "(nama LIKE '%$search%' OR barcode LIKE '%$search%')";
+        $conditions[] = "(nama LIKE '%$search%' OR barcode LIKE '%$search%' OR kode_sparepart LIKE '%$search%')";
     }
     
     if ($low_stock == '1') {
