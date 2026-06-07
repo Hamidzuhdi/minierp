@@ -413,7 +413,7 @@ $is_owner = ($user_role === 'Owner');
             <div class="modal-body">
                 <input type="hidden" id="editPriceItemId">
                 <input type="hidden" id="editPriceQty">
-                
+
                 <div class="mb-3">
                     <label for="editPriceValue" class="form-label">Harga per Unit (Rp)</label>
                     <input type="number" class="form-control form-control-lg" id="editPriceValue" inputmode="decimal" min="0" step="1000" placeholder="0">
@@ -423,6 +423,32 @@ $is_owner = ($user_role === 'Owner');
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
                 <button type="button" class="btn btn-primary" onclick="saveItemCustomPrice()">Simpan Harga</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Edit Harga Khusus Jasa -->
+<div class="modal fade" id="editServicePriceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Harga Khusus - <span id="editPriceServiceName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editPriceServiceId">
+                <input type="hidden" id="editPriceServiceQty">
+
+                <div class="mb-3">
+                    <label for="editPriceServiceValue" class="form-label">Harga per Unit (Rp)</label>
+                    <input type="number" class="form-control form-control-lg" id="editPriceServiceValue" inputmode="decimal" min="0" step="1000" placeholder="0">
+                    <small class="text-muted" id="editPriceServiceTotalPreview">Total: Rp 0</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-primary" onclick="saveServiceCustomPrice()">Simpan Harga</button>
             </div>
         </div>
     </div>
@@ -962,9 +988,9 @@ function viewDetail(id) {
                             <tr><th colspan="3">GRAND TOTAL:</th><th><strong>Rp ${formatNumber(grandAfterDiscount)}</strong></th></tr>
                         </tfoot>
                     </table>
-                    
+
                     <hr>
-                    
+
                     <div class="mb-3">
                         ${!isOwner && spk.status_spk !== 'Sudah Cetak Invoice' ? `
                         <button class="btn btn-primary btn-lg" onclick="openAnalisaModal(${spk.id})">
@@ -1532,18 +1558,28 @@ function loadSPKServices(spkId) {
 function displayServicesList(services) {
     let html = '';
     let total = 0;
-    
+    const useCustomPrice = parseInt($('#analisaForm').data('use-custom-price')) || 0;
+
     if (services && services.length > 0) {
         services.forEach(function(svc) {
-            let subtotal = parseFloat(svc.subtotal) || 0;
+            const svcCustomEnabled = parseInt(svc.use_custom_price) === 1;
+            const customPriceVal = parseFloat(svc.harga_custom);
+            const hasCustomPrice = svc.harga_custom && customPriceVal > 0;
+            const displayPrice = (svcCustomEnabled && hasCustomPrice) ? customPriceVal : parseFloat(svc.harga);
+            let subtotal = parseFloat(svc.qty) * displayPrice;
             total += subtotal;
             html += `
                 <tr>
                     <td>${svc.nama_jasa}</td>
                     <td>${svc.qty}</td>
-                    <td>Rp ${formatNumber(svc.harga)}</td>
+                    <td>Rp ${formatNumber(displayPrice)}</td>
                     <td>Rp ${formatNumber(subtotal)}</td>
                     <td>
+                        ${useCustomPrice ? `
+                            <button type="button" class="btn btn-primary btn-sm" onclick="editServicePrice(${svc.id}, ${svc.qty}, '${svc.nama_jasa}', ${displayPrice})" title="Edit Harga">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        ` : ''}
                         <button type="button" class="btn btn-danger btn-sm" onclick="deleteServiceFromSPK(${svc.id})">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -1916,6 +1952,61 @@ function saveItemCustomPrice() {
                 $('#editPriceModal').modal('hide');
                 // loadSPKSpareparts will reload and automatically call refreshEstimasiBiaya()
                 loadSPKSpareparts(spkId);
+            } else {
+                showAlert('danger', response.message);
+            }
+        }
+    });
+}
+
+// EDIT SERVICE CUSTOM PRICE
+function editServicePrice(serviceId, qty, serviceName, currentPrice) {
+    $('#editPriceServiceId').val(serviceId);
+    $('#editPriceServiceQty').val(qty);
+    $('#editPriceServiceName').text(serviceName);
+    $('#editPriceServiceValue').val(currentPrice);
+
+    // Update preview on input
+    $('#editPriceServiceValue').off('input').on('input', function() {
+        const price = parseFloat($(this).val()) || 0;
+        const total = price * qty;
+        $('#editPriceServiceTotalPreview').text('Total: Rp ' + formatNumber(total));
+    });
+
+    // Trigger initial preview
+    $('#editPriceServiceValue').trigger('input');
+
+    $('#editServicePriceModal').modal('show');
+}
+
+// SAVE SERVICE CUSTOM PRICE
+function saveServiceCustomPrice() {
+    const serviceId = parseInt($('#editPriceServiceId').val());
+    const hargaCustom = parseFloat($('#editPriceServiceValue').val()) || 0;
+    const qty = parseInt($('#editPriceServiceQty').val());
+    const spkId = parseInt($('#analisa_spk_id').val());
+
+    if (serviceId <= 0 || hargaCustom < 0 || qty <= 0) {
+        showAlert('warning', 'Data tidak valid');
+        return;
+    }
+
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: {
+            action: 'update_service_custom_price',
+            service_id: serviceId,
+            harga_custom: hargaCustom,
+            qty: qty
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                $('#editServicePriceModal').modal('hide');
+                // Reload services dan refresh estimasi
+                loadSPKServices(spkId);
             } else {
                 showAlert('danger', response.message);
             }

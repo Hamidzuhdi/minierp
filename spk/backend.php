@@ -358,7 +358,7 @@ elseif ($action === 'read') {
 elseif ($action === 'read_one') {
     $id = (int)$_GET['id'];
     
-    $sql = "SELECT s.*, 
+    $sql = "SELECT s.*,
             c.name as customer_name, c.phone as customer_phone, c.address as customer_address,
             v.nomor_polisi, v.merk, v.model, v.tahun
             FROM spk s
@@ -685,7 +685,8 @@ elseif ($action === 'review_discount') {
                 $id,
                 'Sales discount SPK #' . ($spk['kode_unik_reference'] ?? $id),
                 $currentUserId,
-                'approved'
+                'approved',
+                false // Diskon penjualan tetap dicatat untuk histori, tapi tidak memotong saldo kas (sudah tercermin di total invoice yang lebih kecil)
             );
             if (!$tx['success']) {
                 throw new Exception($tx['message']);
@@ -1192,9 +1193,10 @@ elseif ($action === 'toggle_custom_price') {
     // Update SPK flag
     $sql = "UPDATE spk SET use_custom_price = $use_custom WHERE id = $id";
     if (mysqli_query($conn, $sql)) {
-        // When toggling OFF, also turn off custom pricing for all items in this SPK
+        // When toggling OFF, also turn off custom pricing for all items & services in this SPK
         if ($use_custom == 0) {
             mysqli_query($conn, "UPDATE spk_items SET use_custom_price = 0 WHERE spk_id = $id");
+            mysqli_query($conn, "UPDATE spk_services SET use_custom_price = 0 WHERE spk_id = $id");
         }
         // Sync invoice totals when toggling custom pricing
         spk_sync_active_invoice_totals($conn, $id);
@@ -1231,6 +1233,37 @@ elseif ($action === 'update_item_custom_price') {
         // Sync invoice totals if exists
         spk_sync_active_invoice_totals($conn, $spk_id);
         echo json_encode(['success' => true, 'message' => 'Harga khusus berhasil diupdate']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal update harga: ' . mysqli_error($conn)]);
+    }
+}
+
+// UPDATE CUSTOM PRICE FOR SERVICE
+elseif ($action === 'update_service_custom_price') {
+    $service_id = (int)$_POST['service_id'];
+    $harga_custom = (float)($_POST['harga_custom'] ?? 0);
+
+    if ($service_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Service ID tidak valid']);
+        exit;
+    }
+
+    // Get service data
+    $svcRes = mysqli_query($conn, "SELECT spk_id FROM spk_services WHERE id = $service_id LIMIT 1");
+    $svcRow = $svcRes ? mysqli_fetch_assoc($svcRes) : null;
+    if (!$svcRow) {
+        echo json_encode(['success' => false, 'message' => 'Service tidak ditemukan']);
+        exit;
+    }
+
+    $spk_id = (int)$svcRow['spk_id'];
+
+    // Update harga_custom - calculate subtotal = qty * harga_custom
+    $sql = "UPDATE spk_services SET harga_custom = $harga_custom, use_custom_price = 1, subtotal = (qty * $harga_custom) WHERE id = $service_id";
+    if (mysqli_query($conn, $sql)) {
+        // Sync invoice totals if exists
+        spk_sync_active_invoice_totals($conn, $spk_id);
+        echo json_encode(['success' => true, 'message' => 'Harga khusus jasa berhasil diupdate']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal update harga: ' . mysqli_error($conn)]);
     }

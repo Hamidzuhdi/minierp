@@ -262,7 +262,8 @@ if ($action === 'create_invoice') {
 elseif ($action === 'read') {
     $search = $_GET['search'] ?? '';
     $status = $_GET['status'] ?? '';
-    
+    $month = $_GET['month'] ?? '';
+
         $sql = "SELECT i.*, 
             s.id as spk_id, s.kode_unik_reference as spk_code, s.revision_number, s.status_spk,
             c.name as customer_name, c.phone as customer_phone,
@@ -293,7 +294,12 @@ elseif ($action === 'read') {
         $status = mysqli_real_escape_string($conn, $status);
         $conditions[] = "i.status_piutang = '$status'";
     }
-    
+
+    if (!empty($month) && preg_match('/^\d{4}-\d{2}$/', $month)) {
+        $month = mysqli_real_escape_string($conn, $month);
+        $conditions[] = "DATE_FORMAT(i.tanggal, '%Y-%m') = '$month'";
+    }
+
     if (count($conditions) > 0) {
         $sql .= " WHERE " . implode(' AND ', $conditions);
     }
