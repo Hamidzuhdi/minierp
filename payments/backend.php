@@ -270,7 +270,11 @@ elseif ($action === 'read_account_expenses') {
 
     $accountCodeEsc = mysqli_real_escape_string($conn, $accountCode);
     $conds = [
-        "fa.code = '$accountCodeEsc'"
+        "fa.code = '$accountCodeEsc'",
+        // Transaksi memo (mis. EXP-SALES-DISCOUNT) sengaja tidak memengaruhi saldo akun ini,
+        // jadi disembunyikan dari mutasi akun supaya tidak terlihat seolah memotong saldo.
+        // Riwayatnya tetap bisa dilihat lewat kartu "Riwayat Diskon Penjualan".
+        "ft.affects_balance = 1"
     ];
 
     // Add direction filter if specified
@@ -316,6 +320,155 @@ elseif ($action === 'read_account_expenses') {
     }
 
     echo json_encode(['success' => true, 'data' => $rows]);
+}
+
+// EXPORT EXCEL - Mutasi akun (cash/bank) sesuai filter yang sedang aktif di modal
+elseif ($action === 'export_account_expenses_excel') {
+    $accountCode = trim($_GET['account_code'] ?? '');
+    $from = $_GET['from'] ?? '';
+    $to = $_GET['to'] ?? '';
+    $direction = trim($_GET['direction'] ?? '');
+    $status = trim($_GET['status'] ?? '');
+    $keyword = trim($_GET['keyword'] ?? '');
+    if ($accountCode === '') {
+        echo json_encode(['success' => false, 'message' => 'Kode akun wajib diisi']);
+        exit;
+    }
+
+    $accountCodeEsc = mysqli_real_escape_string($conn, $accountCode);
+    $conds = [
+        "fa.code = '$accountCodeEsc'",
+        // Selaras dengan read_account_expenses: transaksi memo (EXP-SALES-DISCOUNT dkk) yang
+        // tidak memengaruhi saldo akun ini tidak ikut diexport sebagai mutasi akun.
+        "ft.affects_balance = 1"
+    ];
+
+    if ($direction !== '') {
+        $directionEsc = mysqli_real_escape_string($conn, $direction);
+        $conds[] = "ft.direction = '$directionEsc'";
+    }
+    if ($from !== '') {
+        $conds[] = "ft.tanggal >= '" . mysqli_real_escape_string($conn, $from) . "'";
+    }
+    if ($to !== '') {
+        $conds[] = "ft.tanggal <= '" . mysqli_real_escape_string($conn, $to) . "'";
+    }
+    if ($status !== '') {
+        $statusEsc = mysqli_real_escape_string($conn, $status);
+        $conds[] = "ft.status = '$statusEsc'";
+    }
+    if ($keyword !== '') {
+        $keywordEsc = mysqli_real_escape_string($conn, $keyword);
+        $conds[] = "(ft.note LIKE '%$keywordEsc%' OR ft.reference_type LIKE '%$keywordEsc%' OR ft.category LIKE '%$keywordEsc%')";
+    }
+
+    $sql = "SELECT ft.tanggal, fa.name as account_name, ft.direction, ft.status, ft.category,
+                   ft.reference_type, ft.reference_id, u.username as created_by_name, ft.note, ft.amount
+            FROM finance_transactions ft
+            JOIN finance_accounts fa ON ft.account_id = fa.id
+            LEFT JOIN users u ON ft.created_by = u.id
+            WHERE " . implode(' AND ', $conds) . "
+            ORDER BY ft.tanggal DESC, ft.id DESC
+            LIMIT 5000";
+
+    $res = mysqli_query($conn, $sql);
+    if (!$res) {
+        echo json_encode(['success' => false, 'message' => 'Gagal export data: ' . mysqli_error($conn)]);
+        exit;
+    }
+
+    $dirLabelMap = [
+        'in' => 'Masuk',
+        'out' => 'Keluar',
+        'transfer_in' => 'Transfer Masuk',
+        'transfer_out' => 'Transfer Keluar'
+    ];
+
+    $escapeCsvLine = function (array $fields): string {
+        $escaped = array_map(function ($field) {
+            $field = (string)$field;
+            $field = str_replace('"', '""', $field);
+            if (preg_match('/[",\n]/', $field)) {
+                $field = '"' . $field . '"';
+            }
+            return $field;
+        }, $fields);
+        return implode(',', $escaped);
+    };
+
+    $lines = [];
+    $lines[] = $escapeCsvLine(['Tanggal', 'Akun', 'Arah', 'Status', 'Kategori', 'Referensi', 'Dibuat Oleh', 'Catatan', 'Nominal']);
+
+    while ($r = mysqli_fetch_assoc($res)) {
+        $reference = ($r['reference_type'] ?: '-') . ($r['reference_id'] ? (' #' . $r['reference_id']) : '');
+        $isOut = in_array($r['direction'], ['out', 'transfer_out'], true);
+        $sign = $isOut ? '-' : '+';
+        $lines[] = $escapeCsvLine([
+            $r['tanggal'],
+            $r['account_name'],
+            $dirLabelMap[$r['direction']] ?? $r['direction'],
+            $r['status'],
+            $r['category'] ?: '-',
+            $reference,
+            $r['created_by_name'] ?: '-',
+            $r['note'] ?: '-',
+            $sign . number_format((float)$r['amount'], 0, ',', '.'),
+        ]);
+    }
+
+    $csvContent = "\xEF\xBB\xBF" . implode("\r\n", $lines);
+    $filename = 'mutasi_' . strtolower($accountCodeEsc) . '_' . date('Ymd_His') . '.csv';
+
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+    header('Pragma: public');
+    header('Content-Length: ' . strlen($csvContent));
+    echo $csvContent;
+    exit;
+}
+
+// RIWAYAT TRANSAKSI MEMO - dicatat untuk histori/audit, tapi sengaja TIDAK memengaruhi saldo akun
+// (mis. EXP-SALES-DISCOUNT: diskon sudah tercermin di total invoice yang lebih kecil)
+elseif ($action === 'read_balance_memo_transactions') {
+    $from = $_GET['from'] ?? '';
+    $to = $_GET['to'] ?? '';
+    $keyword = trim($_GET['keyword'] ?? '');
+
+    $conds = ["ft.affects_balance = 0"];
+    if ($from !== '') {
+        $conds[] = "ft.tanggal >= '" . mysqli_real_escape_string($conn, $from) . "'";
+    }
+    if ($to !== '') {
+        $conds[] = "ft.tanggal <= '" . mysqli_real_escape_string($conn, $to) . "'";
+    }
+    if ($keyword !== '') {
+        $keywordEsc = mysqli_real_escape_string($conn, $keyword);
+        $conds[] = "(ft.note LIKE '%$keywordEsc%' OR ft.reference_type LIKE '%$keywordEsc%' OR ft.category LIKE '%$keywordEsc%')";
+    }
+
+    $sql = "SELECT ft.id, ft.tanggal, ft.direction, ft.status, ft.category, ft.reference_type, ft.reference_id,
+                   ft.note, ft.amount, u.username as created_by_name
+            FROM finance_transactions ft
+            LEFT JOIN users u ON ft.created_by = u.id
+            WHERE " . implode(' AND ', $conds) . "
+            ORDER BY ft.tanggal DESC, ft.id DESC
+            LIMIT 300";
+
+    $res = mysqli_query($conn, $sql);
+    if (!$res) {
+        echo json_encode(['success' => false, 'message' => 'Gagal memuat riwayat: ' . mysqli_error($conn)]);
+        exit;
+    }
+
+    $rows = [];
+    $total = 0.0;
+    while ($r = mysqli_fetch_assoc($res)) {
+        $rows[] = $r;
+        $total += (float)$r['amount'];
+    }
+
+    echo json_encode(['success' => true, 'data' => $rows, 'total' => $total]);
 }
 
 elseif ($action === 'read_pending_transactions') {
@@ -627,20 +780,24 @@ elseif ($action === 'export_transactions_pdf') {
     $totalIn = 0;
     $totalOut = 0;
     foreach ($rows as $row) {
-        $dirLabel = $dirLabelMap[$row['direction']] ?? $row['direction'];
+        $isMemo = ((int)($row['affects_balance'] ?? 1)) === 0;
+        $dirLabel = $isMemo ? 'Catat' : ($dirLabelMap[$row['direction']] ?? $row['direction']);
+        $accountLabel = $isMemo ? '—' : ($row['account_name'] ?? '-');
         $amount = floatval($row['amount'] ?? 0);
         $reference = ($row['reference_type'] ?? '-') . ($row['reference_id'] ? (' #' . $row['reference_id']) : '');
-        
-        // Sum by direction
-        if (in_array($row['direction'], ['in', 'transfer_in'])) {
-            $totalIn += $amount;
-        } else {
-            $totalOut += $amount;
+
+        // Sum by direction only for balance-affecting transactions
+        if (!$isMemo) {
+            if (in_array($row['direction'], ['in', 'transfer_in'])) {
+                $totalIn += $amount;
+            } else {
+                $totalOut += $amount;
+            }
         }
-        
+
         $html .= '<tr>
             <td>' . ($row['tanggal'] ?? '-') . '</td>
-            <td>' . ($row['account_name'] ?? '-') . '</td>
+            <td>' . $accountLabel . '</td>
             <td>' . $dirLabel . '</td>
             <td>' . ($row['category'] ?? '-') . '</td>
             <td>' . $reference . '</td>

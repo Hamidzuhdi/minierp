@@ -146,6 +146,47 @@ include '../header.php';
 
         <div class="col-12">
             <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>Riwayat Diskon Penjualan (Tidak Memengaruhi Saldo)</strong>
+                    <button class="btn btn-sm btn-outline-primary" type="button" onclick="loadDiscountMemoHistory()">Refresh</button>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">
+                        <i class="fas fa-info-circle"></i>
+                        Catatan diskon penjualan di bawah ini hanya untuk histori &amp; audit &mdash; nominalnya
+                        sudah tercermin pada total invoice yang lebih kecil, sehingga <strong>tidak mengurangi</strong>
+                        saldo Kas maupun Rekening manapun.
+                    </p>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-3"><input type="date" class="form-control form-control-sm" id="dm_from"></div>
+                        <div class="col-md-3"><input type="date" class="form-control form-control-sm" id="dm_to"></div>
+                        <div class="col-md-4"><input type="text" class="form-control form-control-sm" id="dm_keyword" placeholder="Cari catatan / referensi / kategori"></div>
+                        <div class="col-md-2 d-grid"><button class="btn btn-sm btn-outline-primary" type="button" onclick="loadDiscountMemoHistory()">Filter</button></div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th>Kategori</th>
+                                    <th>Referensi</th>
+                                    <th>Dibuat Oleh</th>
+                                    <th>Catatan</th>
+                                    <th class="text-end">Nominal</th>
+                                </tr>
+                            </thead>
+                            <tbody id="discountMemoTableBody"><tr><td colspan="6" class="text-center text-muted">Loading...</td></tr></tbody>
+                        </table>
+                    </div>
+                    <div class="text-end mt-2">
+                        <small class="text-muted">Total tercatat: <strong id="discountMemoTotal">Rp 0</strong> (memo, bukan pengurang saldo)</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
                 <div class="card-header bg-white"><strong>Input Pengeluaran Operasional</strong></div>
                 <div class="card-body">
                     <form id="operationalForm">
@@ -295,6 +336,11 @@ include '../header.php';
                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadAccountExpenses()">Filter</button>
                     </div>
                 </div>
+                <div class="d-flex justify-content-end mb-3">
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="exportAccountExpensesExcel()">
+                        <i class="fas fa-file-excel me-1"></i>Export Excel
+                    </button>
+                </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover">
                         <thead class="table-light">
@@ -335,6 +381,7 @@ $(document).ready(function(){
     loadExpenseCategories();
     loadSummary();
     loadTransactions();
+    loadDiscountMemoHistory();
     if (isOwner) {
         loadPendingApprovals();
     }
@@ -697,6 +744,62 @@ function loadAccountExpenses() {
     });
 }
 
+function exportAccountExpensesExcel() {
+    if (!currentExpenseAccountCode) {
+        return;
+    }
+
+    const params = $.param({
+        action: 'export_account_expenses_excel',
+        account_code: currentExpenseAccountCode,
+        from: $('#ex_from').val(),
+        to: $('#ex_to').val(),
+        direction: $('#ex_direction').val(),
+        status: $('#ex_status').val(),
+        keyword: $('#ex_keyword').val()
+    });
+
+    window.location.href = 'backend.php?' + params;
+}
+
+function loadDiscountMemoHistory() {
+    const query = $.param({
+        action: 'read_balance_memo_transactions',
+        from: $('#dm_from').val(),
+        to: $('#dm_to').val(),
+        keyword: $('#dm_keyword').val()
+    });
+
+    $.getJSON('backend.php?' + query, function(res) {
+        if (!res.success) {
+            $('#discountMemoTableBody').html('<tr><td colspan="6" class="text-center text-danger">' + (res.message || 'Gagal memuat data') + '</td></tr>');
+            return;
+        }
+
+        let html = '';
+        if (!res.data.length) {
+            html = '<tr><td colspan="6" class="text-center text-muted">Belum ada data</td></tr>';
+        } else {
+            res.data.forEach(function(row) {
+                const amount = parseFloat(row.amount || 0);
+                const reference = (row.reference_type || '-') + (row.reference_id ? (' #' + row.reference_id) : '');
+                const creator = row.created_by_name || '-';
+                html += `<tr>
+                    <td>${row.tanggal || '-'}</td>
+                    <td>${row.category || '-'}</td>
+                    <td>${reference}</td>
+                    <td>${creator}</td>
+                    <td>${row.note || '-'}</td>
+                    <td class="text-end text-muted">${fmt(amount)}</td>
+                </tr>`;
+            });
+        }
+
+        $('#discountMemoTableBody').html(html);
+        $('#discountMemoTotal').text(fmt(parseFloat(res.total || 0)));
+    });
+}
+
 function loadSummary(){
     $.getJSON('backend.php?action=summary', function(res){
         if (!res.success) return;
@@ -733,15 +836,19 @@ function loadTransactions(){
                 html = '<tr><td colspan="9" class="text-center text-muted">Belum ada data</td></tr>';
             } else {
                 res.data.forEach(function(t){
+                    const isMemo = parseInt(t.affects_balance || 1, 10) === 0;
                     const out = (t.direction === 'out' || t.direction === 'transfer_out');
-                    const cls = out ? 'text-danger' : 'text-success';
-                    const sign = out ? '-' : '+';
+                    const cls = isMemo ? 'text-muted' : (out ? 'text-danger' : 'text-success');
+                    const sign = isMemo ? '' : (out ? '-' : '+');
                     const dirLabelMap = {
                         in: 'Masuk',
                         out: 'Keluar',
                         transfer_in: 'Transfer Masuk',
                         transfer_out: 'Transfer Keluar'
                     };
+                    const accountLabel = isMemo ? '—' : t.account_name;
+                    const directionLabel = isMemo ? 'Catat' : (dirLabelMap[t.direction] || t.direction);
+
                     let creatorLabel = '-';
                     if (t.created_by) {
                         const id = parseInt(t.created_by, 10);
@@ -756,8 +863,8 @@ function loadTransactions(){
 
                     html += `<tr>
                         <td>${t.tanggal}</td>
-                        <td>${t.account_name}</td>
-                        <td>${dirLabelMap[t.direction] || t.direction}</td>
+                        <td>${accountLabel}</td>
+                        <td>${directionLabel}</td>
                         <td>${statusBadge}</td>
                         <td>${t.category || '-'}</td>
                         <td>${(t.reference_type || '-')}${t.reference_id ? (' #' + t.reference_id) : ''}</td>

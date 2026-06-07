@@ -208,7 +208,8 @@ function finance_add_transaction(
     ?int $referenceId,
     ?string $note,
     ?int $createdBy,
-    string $status = 'approved'
+    string $status = 'approved',
+    bool $affectsBalance = true
 ): array {
     $allowedDirections = ['in', 'out', 'transfer_in', 'transfer_out'];
     if (!in_array($direction, $allowedDirections, true)) {
@@ -228,7 +229,7 @@ function finance_add_transaction(
     }
 
     $newBalance = (float)$account['current_balance'];
-    if ($status === 'approved') {
+    if ($status === 'approved' && $affectsBalance) {
         $isOut = in_array($direction, ['out', 'transfer_out'], true);
         $delta = $isOut ? -$amount : $amount;
         $newBalance = (float)$account['current_balance'] + $delta;
@@ -248,10 +249,12 @@ function finance_add_transaction(
     $approvedBySql = ($status === 'approved' && $createdBy) ? (string)$createdBy : 'NULL';
     $approvedAtSql = ($status === 'approved') ? 'NOW()' : 'NULL';
 
-    $sqlInsert = "INSERT INTO finance_transactions 
-        (tanggal, account_id, direction, category, amount, reference_type, reference_id, note, created_by, status, approved_by, approved_at)
+    $affectsBalanceSql = $affectsBalance ? '1' : '0';
+
+    $sqlInsert = "INSERT INTO finance_transactions
+        (tanggal, account_id, direction, category, amount, reference_type, reference_id, note, created_by, status, affects_balance, approved_by, approved_at)
         VALUES
-        ('" . mysqli_real_escape_string($conn, $tanggal) . "', $accountId, '$directionEsc', '$categoryEsc', $amount, $referenceTypeSql, $referenceIdSql, '$noteEsc', $createdBySql, '$statusEsc', $approvedBySql, $approvedAtSql)";
+        ('" . mysqli_real_escape_string($conn, $tanggal) . "', $accountId, '$directionEsc', '$categoryEsc', $amount, $referenceTypeSql, $referenceIdSql, '$noteEsc', $createdBySql, '$statusEsc', $affectsBalanceSql, $approvedBySql, $approvedAtSql)";
 
     if (!mysqli_query($conn, $sqlInsert)) {
         return ['success' => false, 'message' => 'Gagal insert transaksi keuangan: ' . mysqli_error($conn)];
@@ -261,7 +264,7 @@ function finance_add_transaction(
     // so FK references can reliably point to the created finance transaction row.
     $transactionId = (int)mysqli_insert_id($conn);
 
-    if ($status === 'approved') {
+    if ($status === 'approved' && $affectsBalance) {
         $sqlBalance = "UPDATE finance_accounts SET current_balance = $newBalance WHERE id = $accountId";
         if (!mysqli_query($conn, $sqlBalance)) {
             return ['success' => false, 'message' => 'Gagal update saldo akun: ' . mysqli_error($conn)];

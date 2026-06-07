@@ -21,12 +21,14 @@ if ($user_role !== 'Owner') {
 }
 
 // Get SPK data
-$sql = "SELECT s.*, 
+$sql = "SELECT s.*,
         c.name as customer_name, c.phone as customer_phone, c.address as customer_address,
-        v.nomor_polisi, v.merk, v.model, v.tahun
+        v.nomor_polisi, v.merk, v.model, v.tahun,
+        i.status_piutang as invoice_status_piutang
         FROM spk s
         JOIN customers c ON s.customer_id = c.id
         JOIN vehicles v ON s.vehicle_id = v.id
+        LEFT JOIN invoices i ON i.spk_id = s.id
         WHERE s.id = $spk_id";
 
 $result = mysqli_query($conn, $sql);
@@ -109,6 +111,12 @@ $mpdf = new \Mpdf\Mpdf([
 // Set document properties
 $mpdf->SetTitle('Invoice ' . $spk['kode_unik_reference']);
 $mpdf->SetAuthor('Bengkel Mini ERP');
+
+// Tampilkan watermark "LUNAS" samar-samar di tengah invoice jika sudah dibayar penuh
+if (($spk['invoice_status_piutang'] ?? '') === 'Lunas') {
+    $mpdf->SetWatermarkText('LUNAS', 0.08);
+    $mpdf->showWatermarkText = true;
+}
 
 // Set footer with page numbering - center aligned
 $mpdf->SetFooter('{PAGENO}');

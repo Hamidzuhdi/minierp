@@ -29,10 +29,10 @@ include '../header.php';
                 </div>
                 <div class="card-body">
                     <div class="row mb-3">
-                        <div class="col-md-6">
+                        <div class="col-md-5">
                             <input type="text" class="form-control" id="searchInput" placeholder="Cari invoice, SPK, customer, atau nomor polisi...">
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <select class="form-select" id="statusFilter">
                                 <option value="">Semua Status</option>
                                 <option value="Belum Bayar">Belum Bayar</option>
@@ -40,6 +40,15 @@ include '../header.php';
                                 <option value="Lunas">Lunas</option>
                                 <option value="Tidak_Aktif">Tidak Aktif</option>
                             </select>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+                                <input type="month" class="form-control" id="monthFilter" title="Filter berdasarkan bulan invoice">
+                                <button class="btn btn-outline-secondary" type="button" id="btnClearMonthFilter" title="Tampilkan semua bulan">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="table-responsive">
@@ -216,15 +225,25 @@ $(document).ready(function() {
     $('#statusFilter').on('change', function() {
         loadInvoices();
     });
+
+    // Filter bulan
+    $('#monthFilter').on('change', function() {
+        loadInvoices();
+    });
+    $('#btnClearMonthFilter').on('click', function() {
+        $('#monthFilter').val('');
+        loadInvoices();
+    });
 });
 
 // Load semua invoice
 function loadInvoices() {
     let search = $('#searchInput').val();
     let status = $('#statusFilter').val();
-    
+    let month = $('#monthFilter').val();
+
     $.ajax({
-        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status),
+        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&month=' + encodeURIComponent(month),
         type: 'GET',
         dataType: 'json',
         success: function(response) {
