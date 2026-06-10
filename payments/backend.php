@@ -412,7 +412,7 @@ elseif ($action === 'export_account_expenses_excel') {
             $reference,
             $r['created_by_name'] ?: '-',
             $r['note'] ?: '-',
-            $sign . number_format((float)$r['amount'], 0, ',', '.'),
+            $sign . 'Rp ' . number_format((float)$r['amount'], 0, ',', '.'),
         ]);
     }
 
@@ -606,6 +606,45 @@ elseif ($action === 'create_operational_expense') {
     }
 }
 
+elseif ($action === 'create_income') {
+    $tanggal = $_POST['tanggal'] ?? date('Y-m-d');
+    $incomeName = trim($_POST['income_name'] ?? '');
+    $amount = (float)($_POST['amount'] ?? 0);
+    $accountCode = $_POST['account_code'] ?? '';
+    $note = trim($_POST['note'] ?? '');
+
+    if ($incomeName === '' || $amount <= 0 || $accountCode === '') {
+        echo json_encode(['success' => false, 'message' => 'Data pemasukan tidak lengkap']);
+        exit;
+    }
+
+    $account = finance_get_account_by_code($conn, $accountCode);
+    if (!$account) {
+        echo json_encode(['success' => false, 'message' => 'Akun tujuan tidak valid']);
+        exit;
+    }
+
+    $tx = finance_add_transaction(
+        $conn,
+        $tanggal,
+        (int)$account['id'],
+        'in',
+        'IN-MANUAL',
+        $amount,
+        'manual',
+        null,
+        $note !== '' ? $note : ('Pemasukan: ' . $incomeName),
+        (int)$_SESSION['user_id'],
+        'approved'
+    );
+
+    if ($tx['success']) {
+        echo json_encode(['success' => true, 'message' => 'Pemasukan berhasil dicatat']);
+    } else {
+        echo json_encode(['success' => false, 'message' => $tx['message']]);
+    }
+}
+
 elseif ($action === 'create_transfer') {
     $tanggal = $_POST['tanggal'] ?? date('Y-m-d');
     $fromCode = $_POST['from_account_code'] ?? '';
@@ -680,6 +719,79 @@ elseif ($action === 'create_transfer') {
         mysqli_rollback($conn);
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
+}
+
+elseif ($action === 'export_transactions_excel') {
+    $from = $_GET['from'] ?? '';
+    $to = $_GET['to'] ?? '';
+    $account = $_GET['account'] ?? '';
+    $direction = $_GET['direction'] ?? '';
+    $category = $_GET['category'] ?? '';
+    $keyword = trim($_GET['keyword'] ?? '');
+
+    $sql = "SELECT ft.tanggal, fa.name as account_name, ft.direction, ft.status, ft.category,
+                   ft.reference_type, ft.reference_id, u.username as created_by_name, ft.note, ft.amount,
+                   ft.affects_balance
+            FROM finance_transactions ft
+            JOIN finance_accounts fa ON ft.account_id = fa.id
+            LEFT JOIN users u ON ft.created_by = u.id";
+
+    $conds = [];
+    if ($from !== '') $conds[] = "ft.tanggal >= '" . mysqli_real_escape_string($conn, $from) . "'";
+    if ($to !== '') $conds[] = "ft.tanggal <= '" . mysqli_real_escape_string($conn, $to) . "'";
+    if ($account !== '') $conds[] = "fa.code = '" . mysqli_real_escape_string($conn, $account) . "'";
+    if ($direction !== '') $conds[] = "ft.direction = '" . mysqli_real_escape_string($conn, $direction) . "'";
+    if ($category !== '') $conds[] = "ft.category = '" . mysqli_real_escape_string($conn, $category) . "'";
+    if ($keyword !== '') {
+        $kwEsc = mysqli_real_escape_string($conn, $keyword);
+        $conds[] = "(ft.note LIKE '%$kwEsc%' OR ft.reference_type LIKE '%$kwEsc%' OR ft.reference_id LIKE '%$kwEsc%')";
+    }
+    if (!empty($conds)) $sql .= " WHERE " . implode(' AND ', $conds);
+    $sql .= " ORDER BY ft.tanggal DESC, ft.id DESC LIMIT 5000";
+
+    $res = mysqli_query($conn, $sql);
+
+    $dirLabelMap = ['in' => 'Masuk', 'out' => 'Keluar', 'transfer_in' => 'Transfer Masuk', 'transfer_out' => 'Transfer Keluar'];
+
+    $escapeCsvLine = function(array $fields): string {
+        $escaped = array_map(function($f) {
+            $f = str_replace('"', '""', (string)$f);
+            if (preg_match('/[",\n]/', $f)) $f = '"' . $f . '"';
+            return $f;
+        }, $fields);
+        return implode(',', $escaped);
+    };
+
+    $lines = [];
+    $lines[] = $escapeCsvLine(['Tanggal', 'Akun', 'Arah', 'Status', 'Kategori', 'Referensi', 'Dibuat Oleh', 'Catatan', 'Nominal']);
+    while ($r = mysqli_fetch_assoc($res)) {
+        $isMemo = ((int)($r['affects_balance'] ?? 1)) === 0;
+        $isOut = in_array($r['direction'], ['out', 'transfer_out'], true);
+        $reference = ($r['reference_type'] ?: '-') . ($r['reference_id'] ? (' #' . $r['reference_id']) : '');
+        $sign = (!$isMemo && $isOut) ? '-' : '';
+        $nominal = $sign . 'Rp ' . number_format((float)$r['amount'], 0, ',', '.');
+        $lines[] = $escapeCsvLine([
+            $r['tanggal'],
+            $isMemo ? '—' : $r['account_name'],
+            $isMemo ? 'Catat' : ($dirLabelMap[$r['direction']] ?? $r['direction']),
+            $r['status'],
+            $r['category'] ?: '-',
+            $reference,
+            $r['created_by_name'] ?: '-',
+            $r['note'] ?: '-',
+            $nominal,
+        ]);
+    }
+
+    $csvContent = "\xEF\xBB\xBF" . implode("\r\n", $lines);
+    $filename = 'histori_mutasi_' . date('Ymd_His') . '.csv';
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+    header('Pragma: public');
+    header('Content-Length: ' . strlen($csvContent));
+    echo $csvContent;
+    exit;
 }
 
 elseif ($action === 'export_transactions_pdf') {

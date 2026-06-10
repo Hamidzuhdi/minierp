@@ -104,7 +104,15 @@ include '../header.php';
                         <button class="btn btn-sm btn-outline-secondary quick-range-btn" data-range="week" type="button" onclick="applyQuickRange('week')">Minggu Ini</button>
                         <button class="btn btn-sm btn-outline-secondary quick-range-btn" data-range="month" type="button" onclick="applyQuickRange('month')">Bulan Ini</button>
                         <button class="btn btn-sm btn-outline-secondary quick-range-btn" data-range="all" type="button" onclick="applyQuickRange('all')">Semua</button>
-                        <button class="btn btn-sm btn-outline-success ms-auto" type="button" onclick="exportTransactionsPDF()"><i class="fas fa-file-pdf me-1"></i>Export PDF</button>
+                        <div class="btn-group ms-auto">
+                            <button type="button" class="btn btn-sm btn-outline-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-download me-1"></i>Export
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportTransactionsPDF()"><i class="fas fa-file-pdf me-2 text-danger"></i>Export PDF</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="exportTransactionsExcel()"><i class="fas fa-file-excel me-2 text-success"></i>Export Excel</a></li>
+                            </ul>
+                        </div>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-md-2"><input type="date" class="form-control form-control-sm" id="f_from"></div>
@@ -221,6 +229,43 @@ include '../header.php';
                             </div>
                             <div class="col-md-3 d-grid align-self-end">
                                 <button class="btn btn-primary" type="submit"><i class="fas fa-save"></i> Simpan Pengeluaran</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white"><strong>Input Pemasukan</strong></div>
+                <div class="card-body">
+                    <form id="incomeForm">
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label">Tanggal</label>
+                                <input type="date" class="form-control" id="ic_tanggal" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Nama Pemasukan</label>
+                                <input type="text" class="form-control" id="ic_name" placeholder="Contoh: Penjualan Lain-lain" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Nominal</label>
+                                <input type="number" class="form-control" id="ic_amount" min="1" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Masuk ke Akun</label>
+                                <select class="form-select" id="ic_account" required>
+                                    <option value="">-- Pilih --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-9">
+                                <label class="form-label">Catatan</label>
+                                <textarea class="form-control" id="ic_note" rows="2"></textarea>
+                            </div>
+                            <div class="col-md-3 d-grid align-self-end">
+                                <button class="btn btn-success" type="submit"><i class="fas fa-plus-circle"></i> Simpan Pemasukan</button>
                             </div>
                         </div>
                     </form>
@@ -376,6 +421,7 @@ $(document).ready(function(){
     const today = new Date().toISOString().split('T')[0];
     $('#op_tanggal').val(today);
     $('#tf_tanggal').val(today);
+    $('#ic_tanggal').val(today);
     applyQuickRange('month', false);
     loadAccounts();
     loadExpenseCategories();
@@ -412,6 +458,36 @@ $(document).ready(function(){
                     loadAccounts();
                     loadTransactions();
                     if (isOwner) loadPendingApprovals();
+                } else {
+                    showAlert('danger', res.message);
+                }
+            }
+        });
+    });
+
+    $('#incomeForm').on('submit', function(e){
+        e.preventDefault();
+        $.ajax({
+            url: 'backend.php',
+            type: 'POST',
+            dataType: 'json',
+            data: {
+                action: 'create_income',
+                tanggal: $('#ic_tanggal').val(),
+                income_name: $('#ic_name').val(),
+                amount: $('#ic_amount').val(),
+                account_code: $('#ic_account').val(),
+                note: $('#ic_note').val()
+            },
+            success: function(res){
+                if (res.success){
+                    showAlert('success', res.message);
+                    $('#ic_name').val('');
+                    $('#ic_amount').val('');
+                    $('#ic_note').val('');
+                    loadSummary();
+                    loadAccounts();
+                    loadTransactions();
                 } else {
                     showAlert('danger', res.message);
                 }
@@ -530,6 +606,7 @@ function loadAccounts(){
             filter += `<option value="${a.code}">${a.name}</option>`;
         });
         $('#op_account').html(op);
+        $('#ic_account').html(op);
         $('#tf_from').html(tfFrom);
         $('#tf_to').html(tfTo);
         $('#f_account').html(filter);
@@ -890,7 +967,19 @@ function exportTransactionsPDF() {
         category: $('#f_category').val(),
         keyword: $('#f_keyword').val()
     });
-    
+    window.location.href = 'backend.php?' + params;
+}
+
+function exportTransactionsExcel() {
+    const params = $.param({
+        action: 'export_transactions_excel',
+        from: $('#f_from').val(),
+        to: $('#f_to').val(),
+        account: $('#f_account').val(),
+        direction: $('#f_direction').val(),
+        category: $('#f_category').val(),
+        keyword: $('#f_keyword').val()
+    });
     window.location.href = 'backend.php?' + params;
 }
 

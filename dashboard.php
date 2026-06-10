@@ -525,14 +525,14 @@ if ($is_owner) {
             </div>
         </div>
         <div class="col-lg-3 col-md-4 col-sm-6">
-            <div class="card border-0 shadow-sm bg-warning text-dark h-100 cursor-pointer" onclick="openHppModal()" title="Klik untuk download data">
+            <div class="card border-0 shadow-sm bg-success text-white h-100 cursor-pointer" onclick="openHppModal()" title="Klik untuk lihat detail & download">
                 <div class="card-body p-3">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
-                            <div class="small mb-1">Biaya HPP Sparepart</div>
-                            <div class="fw-bold" id="fcSpareHpp">-</div>
+                            <div class="small mb-1">Keuntungan Sparepart</div>
+                            <div class="fw-bold" id="fcSpareProfit">-</div>
                         </div>
-                        <div class="small text-muted"><i class="fas fa-download"></i></div>
+                        <div class="small"><i class="fas fa-download"></i></div>
                     </div>
                 </div>
             </div>
@@ -691,8 +691,9 @@ if ($is_owner) {
                 $('#fcTotalOut').text(fcFormat(res.summary.total_out));
                 $('#fcNetCashflow').text(fcFormat(res.summary.net_cashflow));
                 $('#fcSalesDiscount').text(fcFormat(res.summary.sales_discount));
-                $('#fcSpareHpp').text(fcFormat(res.summary.spare_hpp));
+                $('#fcSpareProfit').text(fcFormat(res.summary.spare_profit));
                 $('#fcLabaKotorFormula').text(fcFormat(res.summary.laba_kotor_formula));
+                $('#fcTotalBebanOps').text(fcFormat(res.summary.total_beban_operasional || 0));
                 $('#fcZakat').text(fcFormat(res.summary.zakat));
                 $('#fcGrossProfit').text(fcFormat(res.summary.gross_profit));
                 $('#fcTotalJasaMekanik').text(fcFormat(res.summary.total_jasa_mekanik || 0));
@@ -887,31 +888,27 @@ if ($is_owner) {
     </div>
 </div>
 
-<!-- 2. Modal Export Biaya HPP Sparepart -->
+<!-- 2. Modal Export Keuntungan Sparepart Detail -->
 <div class="modal fade" id="hppModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Export Biaya HPP Sparepart</h5>
+                <h5 class="modal-title">Detail Keuntungan Sparepart per Bulan</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label class="form-label">Periode</label>
-                    <div class="row g-2">
-                        <div class="col">
-                            <input type="date" id="hppFromDate" class="form-control" value="<?php echo date('Y-m-01'); ?>">
-                        </div>
-                        <div class="col">
-                            <input type="date" id="hppToDate" class="form-control" value="<?php echo date('Y-m-t'); ?>">
-                        </div>
-                    </div>
+                    <label class="form-label">Pilih Bulan</label>
+                    <input type="month" id="hppMonth" class="form-control" value="<?php echo date('Y-m'); ?>">
+                </div>
+                <div id="hppDetailContainer" class="mb-3" style="max-height:300px;overflow-y:auto;">
+                    <p class="text-muted text-center">Pilih bulan untuk melihat detail</p>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                <button type="button" class="btn btn-primary" onclick="exportHpp()">
-                    <i class="fas fa-download"></i> Download Excel
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                <button type="button" class="btn btn-success" onclick="exportHppDetail()">
+                    <i class="fas fa-file-excel"></i> Download Excel
                 </button>
             </div>
         </div>
@@ -968,7 +965,41 @@ function openJasaMekanikModal() {
 }
 
 function openHppModal() {
-    new bootstrap.Modal(document.getElementById('hppModal')).show();
+    const modal = new bootstrap.Modal(document.getElementById('hppModal'));
+    modal.show();
+    // Load detail saat modal dibuka
+    loadHppDetail();
+    // Trigger load saat bulan berubah
+    document.getElementById('hppMonth').addEventListener('change', loadHppDetail);
+}
+
+function loadHppDetail() {
+    const month = document.getElementById('hppMonth').value;
+    if (!month) {
+        document.getElementById('hppDetailContainer').innerHTML = '<p class="text-muted text-center">Pilih bulan untuk melihat detail</p>';
+        return;
+    }
+
+    $.ajax({
+        url: 'dashboard_export.php?action=get_hpp_detail_json&month=' + month,
+        dataType: 'json',
+        success: function(res) {
+            if (!res.success || !res.data.length) {
+                document.getElementById('hppDetailContainer').innerHTML = '<p class="text-muted text-center">Tidak ada data untuk bulan ini</p>';
+                return;
+            }
+
+            let html = '<table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>Sparepart</th><th>Total Qty</th><th>Total Profit</th></tr></thead><tbody>';
+            res.data.forEach(row => {
+                html += `<tr><td>${row.sparepart_name}</td><td class="text-end">${row.total_qty}</td><td class="text-end fw-bold text-success">Rp ${fmt(row.total_profit).replace('Rp ', '')}</td></tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('hppDetailContainer').innerHTML = html;
+        },
+        error: () => {
+            document.getElementById('hppDetailContainer').innerHTML = '<p class="text-danger text-center">Error loading data</p>';
+        }
+    });
 }
 
 function openPiutangModal() {
@@ -980,33 +1011,26 @@ function exportJasaMekanik() {
     const dateFrom = document.getElementById('jasaFromDate').value;
     const dateTo = document.getElementById('jasaToDate').value;
     const viewType = document.querySelector('input[name="jasaViewType"]:checked').value;
-    
+
     if (!dateFrom || !dateTo) {
         alert('Silakan pilih tanggal dari dan ke');
         return;
     }
-    
+
     // Close modal
     bootstrap.Modal.getInstance(document.getElementById('jasaMekanikModal')).hide();
-    
+
     // Trigger download
     window.location.href = `dashboard_export.php?action=get_jasa_mekanik&export_type=excel&date_from=${dateFrom}&date_to=${dateTo}&view_type=${viewType}`;
 }
 
-function exportHpp() {
-    const dateFrom = document.getElementById('hppFromDate').value;
-    const dateTo = document.getElementById('hppToDate').value;
-    
-    if (!dateFrom || !dateTo) {
-        alert('Silakan pilih tanggal dari dan ke');
+function exportHppDetail() {
+    const month = document.getElementById('hppMonth').value;
+    if (!month) {
+        showAlert('warning', 'Pilih bulan terlebih dahulu');
         return;
     }
-    
-    // Close modal
-    bootstrap.Modal.getInstance(document.getElementById('hppModal')).hide();
-    
-    // Trigger download
-    window.location.href = `dashboard_export.php?action=get_biaya_hpp_sparepart&export_type=excel&date_from=${dateFrom}&date_to=${dateTo}`;
+    window.location.href = `dashboard_export.php?action=get_hpp_detail_excel&month=${month}`;
 }
 
 function exportPiutang() {
