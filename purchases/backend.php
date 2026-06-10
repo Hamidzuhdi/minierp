@@ -269,12 +269,6 @@ elseif ($action === 'get_finance_accounts') {
 
 // UPDATE PURCHASE - Owner isi supplier dan harga
 elseif ($action === 'update_purchase') {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Flow baru aktif: stock langsung masuk saat create, owner tinggal bayar/refund. Edit purchase dinonaktifkan.'
-    ]);
-    exit;
-
     $purchase_id = (int)$_POST['purchase_id'];
     $supplier = trim($_POST['supplier']);
     

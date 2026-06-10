@@ -185,8 +185,15 @@ function exportToExcel($data, $sheet_name, $file_prefix, $columns) {
             $value = $row[$col] ?? '';
             
             // Format numeric values
-            if (is_numeric($value) && (strpos($col, 'total') !== false || strpos($col, 'harga') !== false || strpos($col, 'qty') !== false || strpos($col, 'sisa') !== false || strpos($col, 'sudah') !== false)) {
-                $value = number_format($value, 0, ',', '.');
+            if (is_numeric($value)) {
+                $isMoneyCol = (strpos($col, 'total') !== false || strpos($col, 'harga') !== false || strpos($col, 'sisa') !== false || strpos($col, 'sudah') !== false || strpos($col, 'amount') !== false || strpos($col, 'hpp') !== false);
+                $isQtyCol = (strpos($col, 'qty') !== false || strpos($col, 'stok') !== false || strpos($col, 'stock') !== false);
+                if ($isMoneyCol) {
+                    // Prefix "Rp" so Excel treats as text, not number (avoids 800.000 → 800 misparse)
+                    $value = 'Rp ' . number_format((float)$value, 0, ',', '.');
+                } elseif ($isQtyCol) {
+                    $value = number_format((float)$value, 0, ',', '.');
+                }
             }
             
             $csv_row[] = $value;
@@ -233,6 +240,110 @@ function convertColumnNameToLabel($col) {
     $col = str_replace(['_', 'Id', 'id'], ' ', $col);
     $col = ucwords($col);
     return $col;
+}
+
+// ===== HPP DETAIL (Keuntungan Sparepart) =====
+if ($action === 'get_hpp_detail_json') {
+    $month = trim($_GET['month'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+        echo json_encode(['success' => false, 'data' => []]);
+        exit;
+    }
+    $month_esc = mysqli_real_escape_string($conn, $month);
+
+    // Per-sparepart profit summary for the month
+    $sql = "SELECT
+                sp.id, sp.nama as sparepart_name,
+                SUM(si.qty) as total_qty,
+                SUM(si.qty * si.hpp_satuan) as total_cost,
+                SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as total_revenue,
+                SUM(si.qty * (COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) - si.hpp_satuan)) as total_profit
+            FROM spk_items si
+            JOIN spareparts sp ON si.sparepart_id = sp.id
+            JOIN invoices i ON i.spk_id = si.spk_id
+            WHERE i.status_piutang = 'Lunas'
+              AND DATE_FORMAT(i.tanggal, '%Y-%m') = '$month_esc'
+            GROUP BY sp.id, sp.nama
+            ORDER BY total_profit DESC";
+
+    $res = mysqli_query($conn, $sql);
+    $data = [];
+    while ($row = mysqli_fetch_assoc($res)) {
+        $data[] = $row;
+    }
+    echo json_encode(['success' => true, 'data' => $data]);
+    exit;
+}
+
+elseif ($action === 'get_hpp_detail_excel') {
+    $month = trim($_GET['month'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+        echo json_encode(['success' => false]);
+        exit;
+    }
+    $month_esc = mysqli_real_escape_string($conn, $month);
+
+    // Detailed list per SPK item
+    $sql = "SELECT
+                sp.nama as sparepart_name,
+                s.kode_unik_reference as spk_code,
+                si.qty,
+                si.hpp_satuan as harga_beli,
+                COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) as harga_jual,
+                (si.qty * si.hpp_satuan) as total_cost,
+                (si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as total_revenue,
+                (si.qty * (COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) - si.hpp_satuan)) as profit
+            FROM spk_items si
+            JOIN spareparts sp ON si.sparepart_id = sp.id
+            JOIN spk s ON si.spk_id = s.id
+            JOIN invoices i ON i.spk_id = s.id
+            WHERE i.status_piutang = 'Lunas'
+              AND DATE_FORMAT(i.tanggal, '%Y-%m') = '$month_esc'
+            ORDER BY s.id DESC, sp.nama ASC";
+
+    $res = mysqli_query($conn, $sql);
+
+    $escapeCsvLine = function(array $fields): string {
+        $escaped = array_map(function($f) {
+            $f = str_replace('"', '""', (string)$f);
+            if (preg_match('/[",\n]/', $f)) $f = '"' . $f . '"';
+            return $f;
+        }, $fields);
+        return implode(',', $escaped);
+    };
+
+    $lines = [];
+    $lines[] = $escapeCsvLine(['Sparepart', 'SPK', 'Qty', 'Harga Beli', 'Harga Jual', 'Total Cost', 'Total Revenue', 'Profit']);
+
+    $totalProfit = 0;
+    while ($row = mysqli_fetch_assoc($res)) {
+        $totalProfit += (float)$row['profit'];
+        $lines[] = $escapeCsvLine([
+            $row['sparepart_name'],
+            $row['spk_code'],
+            (int)$row['qty'],
+            'Rp ' . number_format((float)$row['harga_beli'], 0, ',', '.'),
+            'Rp ' . number_format((float)$row['harga_jual'], 0, ',', '.'),
+            'Rp ' . number_format((float)$row['total_cost'], 0, ',', '.'),
+            'Rp ' . number_format((float)$row['total_revenue'], 0, ',', '.'),
+            'Rp ' . number_format((float)$row['profit'], 0, ',', '.'),
+        ]);
+    }
+
+    // Summary row
+    $lines[] = '';
+    $lines[] = $escapeCsvLine(['', '', '', '', 'TOTAL PROFIT:', '', '', 'Rp ' . number_format($totalProfit, 0, ',', '.')]);
+
+    $csvContent = "\xEF\xBB\xBF" . implode("\r\n", $lines);
+    $filename = 'keuntungan_sparepart_' . $month . '.csv';
+
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+    header('Pragma: public');
+    header('Content-Length: ' . strlen($csvContent));
+    echo $csvContent;
+    exit;
 }
 ?>
 
