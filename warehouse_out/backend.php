@@ -58,7 +58,17 @@ if ($action === 'read') {
 
     if ($search !== '') {
         $searchEsc = mysqli_real_escape_string($conn, $search);
-        $conditions[] = "(p.id LIKE '%$searchEsc%' OR p.supplier LIKE '%$searchEsc%' OR u.username LIKE '%$searchEsc%')";
+        $conditions[] = "(
+            p.id LIKE '%$searchEsc%' 
+            OR p.supplier LIKE '%$searchEsc%' 
+            OR u.username LIKE '%$searchEsc%'
+            OR EXISTS (
+                SELECT 1 FROM purchase_items pi_search
+                JOIN spareparts sp_search ON pi_search.sparepart_id = sp_search.id
+                WHERE pi_search.purchase_id = p.id 
+                AND sp_search.kode_sparepart LIKE '%$searchEsc%'
+            )
+        )";
     }
 
     if ($is_paid !== '') {
@@ -350,7 +360,17 @@ elseif ($action === 'export_all_pdf') {
     
     if ($search !== '') {
         $searchEsc = mysqli_real_escape_string($conn, $search);
-        $conditions[] = "(p.id LIKE '%$searchEsc%' OR p.supplier LIKE '%$searchEsc%' OR u.username LIKE '%$searchEsc%')";
+        $conditions[] = "(
+            p.id LIKE '%$searchEsc%' 
+            OR p.supplier LIKE '%$searchEsc%' 
+            OR u.username LIKE '%$searchEsc%'
+            OR EXISTS (
+                SELECT 1 FROM purchase_items pi_search
+                JOIN spareparts sp_search ON pi_search.sparepart_id = sp_search.id
+                WHERE pi_search.purchase_id = p.id 
+                AND sp_search.kode_sparepart LIKE '%$searchEsc%'
+            )
+        )";
     }
     
     if ($is_paid !== '') {
