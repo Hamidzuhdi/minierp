@@ -21,7 +21,7 @@ include '../header.php';
                 <div class="card-body">
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <input type="text" class="form-control" id="searchInput" placeholder="Cari ID purchase, supplier, atau pembuat...">
+                            <input type="text" class="form-control" id="searchInput" placeholder="Cari ID, supplier, pembuat, atau kode sparepart...">
                         </div>
                         <div class="col-md-3">
                             <select class="form-select" id="paidFilter">
