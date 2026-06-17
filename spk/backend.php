@@ -1258,8 +1258,8 @@ elseif ($action === 'update_service_custom_price') {
 
     $spk_id = (int)$svcRow['spk_id'];
 
-    // Update harga_custom - calculate subtotal = qty * harga_custom
-    $sql = "UPDATE spk_services SET harga_custom = $harga_custom, use_custom_price = 1, subtotal = (qty * $harga_custom) WHERE id = $service_id";
+    // Update harga_custom ONLY - subtotal is GENERATED COLUMN, let DB calculate it
+    $sql = "UPDATE spk_services SET harga_custom = $harga_custom, use_custom_price = 1 WHERE id = $service_id";
     if (mysqli_query($conn, $sql)) {
         // Sync invoice totals if exists
         spk_sync_active_invoice_totals($conn, $spk_id);
