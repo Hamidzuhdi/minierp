@@ -190,11 +190,10 @@ if ($action === 'create_invoice') {
         exit;
     }
     
-    // Hitung total sparepart dari spk_items (gunakan snapshot harga_satuan jika tersedia)
+    // Hitung total sparepart dari spk_items - pakai si.subtotal (GENERATED column yang sudah respect harga_custom)
     if ($hasSpkItemPriceCol) {
-        $sql_items = "SELECT SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as biaya_sparepart
+        $sql_items = "SELECT SUM(si.subtotal) as biaya_sparepart
                       FROM spk_items si
-                      JOIN spareparts sp ON si.sparepart_id = sp.id
                       WHERE si.spk_id = $spk_id";
     } else {
         $sql_items = "SELECT SUM(si.qty * sp.harga_jual_default) as biaya_sparepart
@@ -813,11 +812,10 @@ elseif ($action === 'auto_create_invoices') {
     while ($row = mysqli_fetch_assoc($result)) {
         $spk_id = $row['id'];
         
-        // Hitung total sparepart
+        // Hitung total sparepart - pakai si.subtotal (GENERATED column yang sudah respect harga_custom)
         if ($hasSpkItemPriceCol) {
-            $sql_items = "SELECT SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as biaya_sparepart
+            $sql_items = "SELECT SUM(si.subtotal) as biaya_sparepart
                           FROM spk_items si
-                          JOIN spareparts sp ON si.sparepart_id = sp.id
                           WHERE si.spk_id = $spk_id";
         } else {
             $sql_items = "SELECT SUM(si.qty * sp.harga_jual_default) as biaya_sparepart
