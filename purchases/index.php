@@ -36,6 +36,8 @@ $is_owner = ($user_role === 'Owner');
                                 <option value="">Semua Status</option>
                                 <option value="Pending">Pending</option>
                                 <option value="Approved">Approved</option>
+                                <option value="Sudah Bayar">Sudah Bayar</option>
+                                <option value="Belum Bayar">Belum Bayar</option>
                                 <option value="Refund">Refund</option>
                             </select>
                         </div>

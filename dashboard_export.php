@@ -7,10 +7,8 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-header('Content-Type: application/json');
-
 $action = $_GET['action'] ?? '';
-$export_type = $_GET['export_type'] ?? 'json'; // json or excel
+$export_type = $_GET['export_type'] ?? 'json'; // json, excel, or pdf
 
 // ===== 1. JASA MEKANIK (Service/Labor) =====
 if ($action === 'get_jasa_mekanik') {
@@ -152,7 +150,33 @@ elseif ($action === 'get_piutang_aktif') {
     
     if ($export_type === 'excel') {
         exportToExcel($data, 'Piutang Aktif', 'piutang_aktif', ['invoice_id', 'no_invoice', 'tanggal', 'customer_name', 'total', 'sudah_bayar', 'sisa_piutang', 'status_piutang']);
+    } elseif ($export_type === 'pdf') {
+        require_once 'vendor/autoload.php';
+        $html = '<h2>Invoice Belum Bayar</h2>';
+        $html .= '<p>Tanggal Export: ' . date('d/m/Y H:i:s') . '</p>';
+        $html .= '<table border="1" cellpadding="6" cellspacing="0" width="100%">';
+        $html .= '<thead><tr style="background-color:#f0f0f0;"><th>ID Invoice</th><th>No Invoice</th><th>Tanggal</th><th>Customer</th><th>Total</th><th>Sudah Bayar</th><th>Sisa Piutang</th><th>Status</th></tr></thead>';
+        $html .= '<tbody>';
+        foreach ($data as $row) {
+            $html .= '<tr>' .
+                '<td>' . htmlspecialchars($row['invoice_id']) . '</td>' .
+                '<td>' . htmlspecialchars($row['no_invoice']) . '</td>' .
+                '<td>' . htmlspecialchars($row['tanggal']) . '</td>' .
+                '<td>' . htmlspecialchars($row['customer_name']) . '</td>' .
+                '<td>Rp ' . number_format((float)$row['total'], 0, ',', '.') . '</td>' .
+                '<td>Rp ' . number_format((float)$row['sudah_bayar'], 0, ',', '.') . '</td>' .
+                '<td>Rp ' . number_format((float)$row['sisa_piutang'], 0, ',', '.') . '</td>' .
+                '<td>' . htmlspecialchars($row['status_piutang']) . '</td>' .
+                '</tr>';
+        }
+        $html .= '</tbody></table>';
+
+        $mpdf = new \Mpdf\Mpdf(['mode' => 'utf-8', 'format' => 'A4', 'margin_left' => 10, 'margin_right' => 10, 'margin_top' => 10, 'margin_bottom' => 10]);
+        $mpdf->WriteHTML($html);
+        $filename = 'invoice_belum_bayar_' . date('Ymd_His') . '.pdf';
+        $mpdf->Output($filename, 'D');
     } else {
+        header('Content-Type: application/json');
         echo json_encode(['success' => true, 'data' => $data]);
     }
 }
