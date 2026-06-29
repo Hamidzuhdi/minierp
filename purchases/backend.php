@@ -172,7 +172,11 @@ elseif ($action === 'read') {
     
     if (!empty($status)) {
         $status = mysqli_real_escape_string($conn, $status);
-        $conditions[] = "p.status = '$status'";
+        if ($status === 'Sudah Bayar' || $status === 'Belum Bayar') {
+            $conditions[] = "p.is_paid = '$status'";
+        } else {
+            $conditions[] = "p.status = '$status'";
+        }
     }
     
     if (count($conditions) > 0) {

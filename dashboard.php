@@ -90,8 +90,8 @@ if ($is_owner) {
                         AND i.status_piutang != 'Tidak_Aktif'";
     $piutang = mysqli_fetch_assoc(mysqli_query($conn, $piutang_query))['piutang'];
     
-    // Total hutang di PO (purchase yang belum paid)
-    $hutang_query = "SELECT COALESCE(SUM(total), 0) as hutang FROM purchases WHERE is_paid = 'Belum Bayar'";
+    // Total hutang di PO (purchase yang belum paid dan belum di-refund)
+    $hutang_query = "SELECT COALESCE(SUM(total), 0) as hutang FROM purchases WHERE is_paid = 'Belum Bayar' AND status <> 'Refund'";
     $hutang = mysqli_fetch_assoc(mysqli_query($conn, $hutang_query))['hutang'];
     
     // Cashflow bulan ini
@@ -428,6 +428,14 @@ if ($is_owner) {
                         <div class="bg-danger bg-opacity-10 rounded p-3">
                             <i class="fas fa-file-invoice fa-2x text-danger"></i>
                         </div>
+                    </div>
+                    <div class="mt-3 d-flex gap-2 flex-wrap">
+                        <a href="dashboard_export.php?action=get_piutang_aktif&export_type=excel" class="btn btn-sm btn-outline-success">
+                            <i class="fas fa-file-excel me-1"></i>Excel
+                        </a>
+                        <a href="dashboard_export.php?action=get_piutang_aktif&export_type=pdf" class="btn btn-sm btn-outline-danger" target="_blank">
+                            <i class="fas fa-file-pdf me-1"></i>PDF
+                        </a>
                     </div>
                 </div>
             </div>
