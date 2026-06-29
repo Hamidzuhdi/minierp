@@ -29,7 +29,7 @@ $is_owner = ($user_role === 'Owner');
                 <div class="card-body">
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <input type="text" class="form-control" id="searchInput" placeholder="Cari ID atau supplier...">
+                            <input type="text" class="form-control" id="searchInput" placeholder="Cari ID, supplier, atau kode sparepart...">
                         </div>
                         <div class="col-md-6">
                             <select class="form-select" id="statusFilter">

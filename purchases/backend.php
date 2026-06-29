@@ -156,16 +156,18 @@ elseif ($action === 'read') {
     $search = $_GET['search'] ?? '';
     $status = $_GET['status'] ?? '';
     
-    $sql = "SELECT p.*, u.username as created_by_name, fa.name as payment_account_name, fa.code as payment_account_code
+    $sql = "SELECT DISTINCT p.*, u.username as created_by_name, fa.name as payment_account_name, fa.code as payment_account_code
             FROM purchases p
-            LEFT JOIN users u ON p.created_by = u.id";
-    $sql .= " LEFT JOIN finance_accounts fa ON p.payment_account_id = fa.id";
+            LEFT JOIN users u ON p.created_by = u.id
+            LEFT JOIN finance_accounts fa ON p.payment_account_id = fa.id
+            LEFT JOIN purchase_items pi ON pi.purchase_id = p.id
+            LEFT JOIN spareparts s ON pi.sparepart_id = s.id";
     
     $conditions = [];
     
     if (!empty($search)) {
         $search = mysqli_real_escape_string($conn, $search);
-        $conditions[] = "(p.supplier LIKE '%$search%' OR p.id LIKE '%$search%')";
+        $conditions[] = "(p.supplier LIKE '%$search%' OR p.id LIKE '%$search%' OR s.kode_sparepart LIKE '%$search%')";
     }
     
     if (!empty($status)) {
