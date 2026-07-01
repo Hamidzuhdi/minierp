@@ -300,11 +300,16 @@ ob_start();
             if (count($services) > 0) {
                 foreach ($services as $svc): 
             ?>
+            <?php
+                $svcCustomEnabled = (int)($svc['use_custom_price'] ?? 0) === 1;
+                $svcCustomPrice = (float)($svc['harga_custom'] ?? 0);
+                $svcDisplayPrice = ($svcCustomEnabled && $svcCustomPrice > 0) ? $svcCustomPrice : (float)$svc['harga'];
+            ?>
             <tr>
                 <td class="text-center"><?php echo $no++; ?></td>
                 <td><?php echo $svc['nama_jasa']; ?></td>
                 <td class="text-center"><?php echo $svc['qty']; ?></td>
-                <td class="text-right">Rp <?php echo number_format($svc['harga'], 0, ',', '.'); ?></td>
+                <td class="text-right">Rp <?php echo number_format($svcDisplayPrice, 0, ',', '.'); ?></td>
                 <td class="text-right">Rp <?php echo number_format($svc['subtotal'], 0, ',', '.'); ?></td>
             </tr>
             <?php 

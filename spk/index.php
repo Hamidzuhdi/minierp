@@ -904,12 +904,16 @@ function viewDetail(id) {
                 if (spk.services && spk.services.length > 0) {
                     spk.services.forEach(function(svc) {
                         let subtotal = parseFloat(svc.subtotal) || 0;
+                        const svcCustomEnabled = parseInt(svc.use_custom_price) === 1;
+                        const svcCustomPrice = parseFloat(svc.harga_custom);
+                        const svcHasCustom = svc.harga_custom && svcCustomPrice > 0;
+                        const svcDisplayPrice = (svcCustomEnabled && svcHasCustom) ? svcCustomPrice : parseFloat(svc.harga);
                         if (isOwner) {
                             html += `
                                 <tr>
                                     <td>${svc.nama_jasa}</td>
                                     <td>${svc.qty}</td>
-                                    <td>Rp ${formatNumber(svc.harga)}</td>
+                                    <td>Rp ${formatNumber(svcDisplayPrice)}</td>
                                     <td>Rp ${formatNumber(subtotal)}</td>
                                 </tr>
                             `;
