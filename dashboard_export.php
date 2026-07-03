@@ -309,6 +309,7 @@ elseif ($action === 'get_hpp_detail_excel') {
 
     // Detailed list per SPK item
     $sql = "SELECT
+                sp.kode_sparepart as sparepart_code,
                 sp.nama as sparepart_name,
                 s.kode_unik_reference as spk_code,
                 si.qty,
@@ -337,12 +338,13 @@ elseif ($action === 'get_hpp_detail_excel') {
     };
 
     $lines = [];
-    $lines[] = $escapeCsvLine(['Sparepart', 'SPK', 'Qty', 'Harga Beli', 'Harga Jual', 'Total Cost', 'Total Revenue', 'Profit']);
+    $lines[] = $escapeCsvLine(['Kode Sparepart', 'Sparepart', 'SPK', 'Qty', 'Harga Beli', 'Harga Jual', 'Total Cost', 'Total Revenue', 'Profit']);
 
     $totalProfit = 0;
     while ($row = mysqli_fetch_assoc($res)) {
         $totalProfit += (float)$row['profit'];
         $lines[] = $escapeCsvLine([
+            $row['sparepart_code'],
             $row['sparepart_name'],
             $row['spk_code'],
             (int)$row['qty'],
@@ -356,7 +358,7 @@ elseif ($action === 'get_hpp_detail_excel') {
 
     // Summary row
     $lines[] = '';
-    $lines[] = $escapeCsvLine(['', '', '', '', 'TOTAL PROFIT:', '', '', 'Rp ' . number_format($totalProfit, 0, ',', '.')]);
+    $lines[] = $escapeCsvLine(['', '', '', '', 'TOTAL PROFIT:', '', '', '', 'Rp ' . number_format($totalProfit, 0, ',', '.')]);
 
     $csvContent = "\xEF\xBB\xBF" . implode("\r\n", $lines);
     $filename = 'keuntungan_sparepart_' . $month . '.csv';
