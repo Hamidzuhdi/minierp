@@ -181,6 +181,45 @@ elseif ($action === 'get_piutang_aktif') {
     }
 }
 
+// ===== 4. SPK MONTHLY ENTRY =====
+elseif ($action === 'get_spk_monthly') {
+    $month = $_GET['month'] ?? date('Y-m');
+    
+    if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+        echo json_encode(['success' => false, 'data' => []]);
+        exit;
+    }
+    
+    $month_esc = mysqli_real_escape_string($conn, $month);
+    $month_start = $month . '-01';
+    $month_end = date('Y-m-t', strtotime($month_start));
+    
+    $sql = "SELECT 
+                s.kode_unik_reference,
+                DATE_FORMAT(s.tanggal, '%d-%m-%Y') as tanggal,
+                c.name as customer_name,
+                v.nomor_polisi,
+                s.status_spk
+            FROM spk s
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN vehicles v ON s.vehicle_id = v.id
+            WHERE DATE(s.tanggal) BETWEEN '$month_start' AND '$month_end'
+            ORDER BY s.tanggal DESC";
+    
+    $result = mysqli_query($conn, $sql);
+    $data = [];
+    while ($row = mysqli_fetch_assoc($result)) {
+        $data[] = $row;
+    }
+    
+    if ($export_type === 'excel') {
+        exportToExcel($data, 'SPK Bulanan', 'spk_monthly', ['kode_unik_reference', 'tanggal', 'customer_name', 'nomor_polisi', 'status_spk']);
+    } else {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'data' => $data]);
+    }
+}
+
 // ===== HELPER FUNCTIONS =====
 
 function exportToExcel($data, $sheet_name, $file_prefix, $columns) {
