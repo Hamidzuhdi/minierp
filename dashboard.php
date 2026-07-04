@@ -248,7 +248,7 @@ if ($is_owner) {
             </div>
         </div>
         <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
+            <div class="card border-0 shadow-sm h-100 cursor-pointer" onclick="openSpkMonthlyModal()" title="Klik untuk lihat detail & download">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -954,6 +954,48 @@ if ($is_owner) {
     </div>
 </div>
 
+<!-- 4. Modal SPK Monthly Entry -->
+<div class="modal fade" id="spkMonthlyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Entry SPK Per Bulan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Pilih Bulan</label>
+                    <input type="month" id="spkMonthFilter" class="form-control" value="<?php echo date('Y-m'); ?>">
+                </div>
+                
+                <!-- Pagination Controls -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <small class="text-muted">Total: <strong id="spkTotalCount">0</strong> SPK | Halaman: <strong id="spkCurrentPage">1</strong> / <strong id="spkTotalPages">1</strong></small>
+                    </div>
+                    <nav aria-label="SPK Pagination">
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item"><a class="page-link" href="#" onclick="spkPreviousPage(); return false;">← Sebelumnya</a></li>
+                            <li class="page-item"><a class="page-link" href="#" onclick="spkNextPage(); return false;">Selanjutnya →</a></li>
+                        </ul>
+                    </nav>
+                </div>
+                
+                <!-- SPK Table -->
+                <div id="spkDetailContainer" style="max-height:400px;overflow-y:auto;">
+                    <p class="text-muted text-center">Loading...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                <button type="button" class="btn btn-success" onclick="exportSpkMonthly()">
+                    <i class="fas fa-file-excel"></i> Download Excel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ===== STYLES ===== -->
 <style>
 .cursor-pointer {
@@ -971,6 +1013,113 @@ if ($is_owner) {
 function openJasaMekanikModal() {
     new bootstrap.Modal(document.getElementById('jasaMekanikModal')).show();
 }
+
+function openSpkMonthlyModal() {
+    const modal = new bootstrap.Modal(document.getElementById('spkMonthlyModal'));
+    modal.show();
+    // Load data saat modal dibuka
+    spkCurrentPageNum = 1;
+    loadSpkMonthlyData();
+    // Trigger load saat bulan berubah
+    document.getElementById('spkMonthFilter').addEventListener('change', function() {
+        spkCurrentPageNum = 1;
+        loadSpkMonthlyData();
+    });
+}
+
+// SPK Monthly Pagination
+let spkCurrentPageNum = 1;
+let spkAllData = [];
+const SPK_PAGE_SIZE = 10;
+
+function loadSpkMonthlyData() {
+    const month = document.getElementById('spkMonthFilter').value;
+    if (!month) {
+        document.getElementById('spkDetailContainer').innerHTML = '<p class="text-muted text-center">Pilih bulan untuk melihat detail</p>';
+        return;
+    }
+
+    $.ajax({
+        url: 'dashboard_export.php?action=get_spk_monthly&month=' + month,
+        dataType: 'json',
+        success: function(res) {
+            if (!res.success || !res.data.length) {
+                document.getElementById('spkDetailContainer').innerHTML = '<p class="text-muted text-center">Tidak ada SPK untuk bulan ini</p>';
+                document.getElementById('spkTotalCount').textContent = '0';
+                document.getElementById('spkCurrentPage').textContent = '1';
+                document.getElementById('spkTotalPages').textContent = '1';
+                return;
+            }
+
+            spkAllData = res.data;
+            const totalPages = Math.ceil(spkAllData.length / SPK_PAGE_SIZE);
+            
+            // Update pagination info
+            document.getElementById('spkTotalCount').textContent = spkAllData.length;
+            document.getElementById('spkTotalPages').textContent = totalPages;
+            
+            // Display current page
+            displaySpkPage();
+        },
+        error: () => {
+            document.getElementById('spkDetailContainer').innerHTML = '<p class="text-danger text-center">Error loading data</p>';
+        }
+    });
+}
+
+function displaySpkPage() {
+    const totalPages = Math.ceil(spkAllData.length / SPK_PAGE_SIZE);
+    
+    if (spkCurrentPageNum < 1) spkCurrentPageNum = 1;
+    if (spkCurrentPageNum > totalPages) spkCurrentPageNum = totalPages;
+    
+    document.getElementById('spkCurrentPage').textContent = spkCurrentPageNum;
+    
+    const start = (spkCurrentPageNum - 1) * SPK_PAGE_SIZE;
+    const end = start + SPK_PAGE_SIZE;
+    const pageData = spkAllData.slice(start, end);
+    
+    let html = '<table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>Kode SPK</th><th>Tanggal</th><th>Customer</th><th>Polisi</th><th>Status</th></tr></thead><tbody>';
+    
+    pageData.forEach(spk => {
+        const statusBadge = getSpkStatusBadge(spk.status_spk);
+        html += `<tr>
+            <td>${spk.kode_unik_reference}</td>
+            <td>${spk.tanggal}</td>
+            <td>${spk.customer_name || '-'}</td>
+            <td>${spk.nomor_polisi || '-'}</td>
+            <td>${statusBadge}</td>
+        </tr>`;
+    });
+    
+    html += '</tbody></table>';
+    document.getElementById('spkDetailContainer').innerHTML = html;
+}
+
+function spkPreviousPage() {
+    spkCurrentPageNum--;
+    displaySpkPage();
+}
+
+function spkNextPage() {
+    const totalPages = Math.ceil(spkAllData.length / SPK_PAGE_SIZE);
+    if (spkCurrentPageNum < totalPages) {
+        spkCurrentPageNum++;
+        displaySpkPage();
+    }
+}
+
+function getSpkStatusBadge(status) {
+    const badges = {
+        'Menunggu Konfirmasi': '<span class="badge bg-warning">Menunggu Konfirmasi</span>',
+        'Dalam Pengerjaan': '<span class="badge bg-info">Dalam Pengerjaan</span>',
+        'Selesai': '<span class="badge bg-success">Selesai</span>',
+        'Dikirim ke owner': '<span class="badge bg-primary">Dikirim ke owner</span>',
+        'Dibatalkan': '<span class="badge bg-danger">Dibatalkan</span>'
+    };
+    return badges[status] || '<span class="badge bg-secondary">' + status + '</span>';
+}
+
 
 function openHppModal() {
     const modal = new bootstrap.Modal(document.getElementById('hppModal'));
@@ -1055,6 +1204,20 @@ function exportPiutang() {
     
     // Trigger download
     window.location.href = `dashboard_export.php?action=get_piutang_aktif&export_type=excel&date_from=${dateFrom}&date_to=${dateTo}`;
+}
+
+function exportSpkMonthly() {
+    const month = document.getElementById('spkMonthFilter').value;
+    if (!month) {
+        alert('Silakan pilih bulan terlebih dahulu');
+        return;
+    }
+    
+    // Close modal
+    bootstrap.Modal.getInstance(document.getElementById('spkMonthlyModal')).hide();
+    
+    // Trigger download
+    window.location.href = `dashboard_export.php?action=get_spk_monthly&export_type=excel&month=${month}`;
 }
 </script>
 
