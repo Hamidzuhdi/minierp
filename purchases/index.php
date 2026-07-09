@@ -846,7 +846,7 @@ $('#editPurchaseForm').on('submit', function(e) {
 
 // Update status (Refund)
 function updateStatus(id, status) {
-    const confirmMsg = 'Refund purchase ini? Stock sparepart akan dikurangi kembali.';
+    const confirmMsg = 'Refund purchase ini? Stock sparepart akan dikurangi dan saldo akun akan bertambah.';
     
     if (confirm(confirmMsg)) {
         $.ajax({

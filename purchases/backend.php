@@ -338,7 +338,8 @@ elseif ($action === 'update_status') {
     $new_status = $_POST['status'];
     $user_role = $_SESSION['role'] ?? 'Admin';
 
-    // Admin dan Owner bisa refund
+    // Admin dan Owner bisa refund untuk purchase belum dibayar.
+    // Untuk purchase yang sudah dibayar, hanya Owner yang bisa refund.
     if (!in_array($user_role, ['Admin', 'Owner'])) {
         echo json_encode(['success' => false, 'message' => 'Hanya Admin/Owner yang dapat refund purchase']);
         exit;
@@ -351,7 +352,7 @@ elseif ($action === 'update_status') {
     }
     
     // Get current purchase data
-    $sql = "SELECT status, is_paid FROM purchases WHERE id = $id";
+    $sql = "SELECT status, is_paid, total, payment_account_id FROM purchases WHERE id = $id";
     $result = mysqli_query($conn, $sql);
     $purchase = mysqli_fetch_assoc($result);
     if (!$purchase) {
@@ -359,14 +360,15 @@ elseif ($action === 'update_status') {
         exit;
     }
     $old_status = $purchase['status'];
+    $was_paid = (($purchase['is_paid'] ?? '') === 'Sudah Bayar');
 
     if ($old_status === 'Refund') {
         echo json_encode(['success' => false, 'message' => 'Purchase sudah berstatus Refund']);
         exit;
     }
 
-    if (($purchase['is_paid'] ?? '') === 'Sudah Bayar') {
-        echo json_encode(['success' => false, 'message' => 'Ubah dulu status pembayaran menjadi Belum Bayar sebelum Refund']);
+    if ($was_paid && $user_role !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang dapat refund purchase yang sudah dibayar']);
         exit;
     }
     
@@ -383,7 +385,7 @@ elseif ($action === 'update_status') {
     
     try {
         // Update purchase status
-        $sql_update = "UPDATE purchases SET status = 'Refund' WHERE id = $id";
+        $sql_update = "UPDATE purchases SET status = 'Refund', is_paid = 'Belum Bayar', payment_account_id = NULL, paid_at = NULL, payment_note = NULL WHERE id = $id";
         if (!mysqli_query($conn, $sql_update)) {
             throw new Exception('Gagal update status purchase');
         }
@@ -396,7 +398,39 @@ elseif ($action === 'update_status') {
                 throw new Exception('Gagal update stock saat refund');
             }
         }
+
         $message = 'Purchase berhasil di-refund dan stock telah dikurangi';
+        if ($was_paid) {
+            $accountId = (int)($purchase['payment_account_id'] ?? 0);
+            if ($accountId <= 0) {
+                throw new Exception('Akun pembayaran purchase tidak ditemukan');
+            }
+
+            $account = finance_get_account_by_id($conn, $accountId);
+            if (!$account) {
+                throw new Exception('Akun pembayaran purchase tidak valid');
+            }
+
+            $tx = finance_add_transaction(
+                $conn,
+                date('Y-m-d'),
+                $accountId,
+                'in',
+                'IN-REFUND-PO',
+                (float)$purchase['total'],
+                'purchase',
+                $id,
+                'Refund dari purchase #' . $id,
+                (int)$_SESSION['user_id'],
+                'approved'
+            );
+
+            if (!$tx['success']) {
+                throw new Exception($tx['message']);
+            }
+
+            $message = 'Purchase berhasil di-refund, stock telah dikurangi, dan saldo akun telah ditambahkan';
+        }
         
         mysqli_commit($conn);
         echo json_encode(['success' => true, 'message' => $message]);
