@@ -314,18 +314,20 @@ if ($action === 'get_hpp_detail_json') {
     }
     $month_esc = mysqli_real_escape_string($conn, $month);
 
-    // Per-sparepart profit summary for the month
+    // Per-sparepart profit summary for the month.
+    // Accrual: dihitung begitu item dipakai di SPK, tidak menunggu invoice Lunas.
+    // si.subtotal (GENERATED) sudah menghitung harga_custom jika harga khusus aktif.
     $sql = "SELECT
                 sp.id, sp.nama as sparepart_name,
                 SUM(si.qty) as total_qty,
                 SUM(si.qty * si.hpp_satuan) as total_cost,
-                SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as total_revenue,
-                SUM(si.qty * (COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) - si.hpp_satuan)) as total_profit
+                SUM(si.subtotal) as total_revenue,
+                SUM(si.subtotal - (si.qty * si.hpp_satuan)) as total_profit
             FROM spk_items si
             JOIN spareparts sp ON si.sparepart_id = sp.id
-            JOIN invoices i ON i.spk_id = si.spk_id
-            WHERE i.status_piutang = 'Lunas'
-              AND DATE_FORMAT(i.tanggal, '%Y-%m') = '$month_esc'
+            JOIN spk s ON s.id = si.spk_id
+            WHERE s.status_spk <> 'Dibatalkan'
+              AND DATE_FORMAT(s.tanggal, '%Y-%m') = '$month_esc'
             GROUP BY sp.id, sp.nama
             ORDER BY total_profit DESC";
 
@@ -346,23 +348,26 @@ elseif ($action === 'get_hpp_detail_excel') {
     }
     $month_esc = mysqli_real_escape_string($conn, $month);
 
-    // Detailed list per SPK item
+    // Detailed list per SPK item.
+    // harga_jual pakai harga_custom jika harga khusus aktif, konsisten dengan si.subtotal (GENERATED).
     $sql = "SELECT
                 sp.kode_sparepart as sparepart_code,
                 sp.nama as sparepart_name,
                 s.kode_unik_reference as spk_code,
                 si.qty,
                 si.hpp_satuan as harga_beli,
-                COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) as harga_jual,
+                CASE WHEN si.use_custom_price = 1 AND si.harga_custom IS NOT NULL
+                     THEN si.harga_custom
+                     ELSE COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)
+                END as harga_jual,
                 (si.qty * si.hpp_satuan) as total_cost,
-                (si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)) as total_revenue,
-                (si.qty * (COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default) - si.hpp_satuan)) as profit
+                si.subtotal as total_revenue,
+                (si.subtotal - (si.qty * si.hpp_satuan)) as profit
             FROM spk_items si
             JOIN spareparts sp ON si.sparepart_id = sp.id
             JOIN spk s ON si.spk_id = s.id
-            JOIN invoices i ON i.spk_id = s.id
-            WHERE i.status_piutang = 'Lunas'
-              AND DATE_FORMAT(i.tanggal, '%Y-%m') = '$month_esc'
+            WHERE s.status_spk <> 'Dibatalkan'
+              AND DATE_FORMAT(s.tanggal, '%Y-%m') = '$month_esc'
             ORDER BY s.id DESC, sp.nama ASC";
 
     $res = mysqli_query($conn, $sql);

@@ -434,7 +434,13 @@ elseif ($action === 'read_one') {
         }
         
         $row['warehouse_requests'] = $warehouse_requests;
-        
+
+        // Biaya pihak ketiga (OPL) yang dialokasikan ke SPK ini - mengurangi keuntungan jasa,
+        // TIDAK mempengaruhi invoice/PDF customer (murni informasi internal Owner).
+        $sql_opl = "SELECT COALESCE(SUM(amount), 0) as total FROM operational_expense_spk_allocations WHERE spk_id = $id";
+        $result_opl = mysqli_query($conn, $sql_opl);
+        $row['biaya_pihak_ketiga'] = $result_opl ? (float)mysqli_fetch_assoc($result_opl)['total'] : 0;
+
         echo json_encode(['success' => true, 'data' => $row]);
     } else {
         echo json_encode(['success' => false, 'message' => 'SPK tidak ditemukan']);

@@ -14,7 +14,6 @@ finance_ensure_default_accounts($conn);
 $month = trim($_GET['month'] ?? '');
 $month_esc = !empty($month) ? mysqli_real_escape_string($conn, $month) : '';
 $month_filter = !empty($month_esc) ? "AND DATE_FORMAT(ft.tanggal, '%Y-%m') = '$month_esc'" : '';
-$month_filter_invoice = !empty($month_esc) ? "AND DATE_FORMAT(i.tanggal, '%Y-%m') = '$month_esc'" : '';
 
 // Summary from ledger (exclude internal transfer from net cashflow)
 $qIn = "SELECT COALESCE(SUM(ft.amount), 0) total
@@ -73,27 +72,30 @@ $sales_discount = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSalesDiscount)
 $fixed_expense_total = (float)mysqli_fetch_assoc(mysqli_query($conn, $qFixedExpense))['total'];
 $variable_expense_total = (float)mysqli_fetch_assoc(mysqli_query($conn, $qVariableExpense))['total'];
 
-// Sparepart realized profit (invoice Lunas) using snapshot selling price and HPP.
+// Sparepart profit: accrual begitu item dipakai di SPK, TIDAK menunggu invoice Lunas.
+// Supaya SPK dibuat Januari tetap terhitung di Januari meski customer baru lunas bulan berikutnya.
 $has_hpp_col_res = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'hpp_satuan'");
 $has_hpp_col = $has_hpp_col_res && mysqli_num_rows($has_hpp_col_res) > 0;
 
-$qSpareRevenue = "SELECT COALESCE(SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)), 0) total
+$month_filter_spk_tanggal = !empty($month_esc) ? "AND DATE_FORMAT(s.tanggal, '%Y-%m') = '$month_esc'" : '';
+
+// Use si.subtotal (GENERATED column) supaya harga khusus (harga_custom) ikut terhitung.
+$qSpareRevenue = "SELECT COALESCE(SUM(si.subtotal), 0) total
                   FROM spk_items si
-                  JOIN spareparts sp ON sp.id = si.sparepart_id
-                  JOIN invoices i ON i.spk_id = si.spk_id
-                  WHERE i.status_piutang = 'Lunas' $month_filter_invoice";
+                  JOIN spk s ON s.id = si.spk_id
+                  WHERE s.status_spk <> 'Dibatalkan' $month_filter_spk_tanggal";
 
 if ($has_hpp_col) {
     $qSpareHpp = "SELECT COALESCE(SUM(si.qty * si.hpp_satuan), 0) total
                   FROM spk_items si
-                  JOIN invoices i ON i.spk_id = si.spk_id
-                  WHERE i.status_piutang = 'Lunas' $month_filter_invoice";
+                  JOIN spk s ON s.id = si.spk_id
+                  WHERE s.status_spk <> 'Dibatalkan' $month_filter_spk_tanggal";
 } else {
     $qSpareHpp = "SELECT COALESCE(SUM(si.qty * sp.harga_beli_default), 0) total
                   FROM spk_items si
                   JOIN spareparts sp ON sp.id = si.sparepart_id
-                  JOIN invoices i ON i.spk_id = si.spk_id
-                  WHERE i.status_piutang = 'Lunas' $month_filter_invoice";
+                  JOIN spk s ON s.id = si.spk_id
+                  WHERE s.status_spk <> 'Dibatalkan' $month_filter_spk_tanggal";
 }
 
 $spare_revenue = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareRevenue))['total'];
@@ -102,7 +104,8 @@ $spare_profit = $spare_revenue - $spare_hpp;
 
 // Total jasa mekanik (service) - untuk history/tracking saja
 $spk_month_filter = !empty($month_esc) ? "AND DATE_FORMAT(s.created_at, '%Y-%m') = '$month_esc'" : '';
-$qTotalJasa = "SELECT COALESCE(SUM(ss.qty * ss.harga), 0) total
+// Use ss.subtotal (GENERATED column) supaya harga khusus (harga_custom) ikut terhitung.
+$qTotalJasa = "SELECT COALESCE(SUM(ss.subtotal), 0) total
                FROM spk_services ss
                JOIN spk s ON s.id = ss.spk_id
                WHERE s.status_spk IN ('Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice')
@@ -111,8 +114,10 @@ $total_jasa_mekanik = (float)mysqli_fetch_assoc(mysqli_query($conn, $qTotalJasa)
 
 $laba_kotor_formula = $total_in - ($sales_discount + $spare_hpp);
 $total_beban_operasional = $fixed_expense_total + $variable_expense_total;
-$zakat = $laba_kotor_formula > 0 ? ($laba_kotor_formula * 0.025) : 0;
-$gross_profit = $laba_kotor_formula - ($total_beban_operasional + $zakat);
+// Zakat dihitung dari Laba Bersih (setelah beban operasional), bukan dari Laba Kotor.
+$laba_bersih_sebelum_zakat = $laba_kotor_formula - $total_beban_operasional;
+$zakat = $laba_bersih_sebelum_zakat > 0 ? ($laba_bersih_sebelum_zakat * 0.025) : 0;
+$net_profit = $laba_bersih_sebelum_zakat - $zakat;
 
 $cashAcc = finance_get_account_by_code($conn, 'cash');
 $bankAcc = finance_get_account_by_code($conn, 'bank');
@@ -229,7 +234,7 @@ echo json_encode([
         'variable_expense_total' => $variable_expense_total,
         'total_beban_operasional' => $total_beban_operasional,
         'zakat' => $zakat,
-        'gross_profit' => $gross_profit,
+        'net_profit' => $net_profit,
         'total_jasa_mekanik' => $total_jasa_mekanik,
         'net_cashflow' => $total_in - $total_out,
         'saldo_akhir' => $saldo_akhir,

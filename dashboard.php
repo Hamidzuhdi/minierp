@@ -572,7 +572,7 @@ if ($is_owner) {
         <div class="col-lg-3 col-md-4 col-sm-6">
             <div class="card border-0 shadow-sm bg-success text-white h-100">
                 <div class="card-body p-3">
-                    <div class="small mb-1">Gross Profit </div>
+                    <div class="small mb-1">Net Profit (Laba Bersih)</div>
                     <div class="fw-bold" id="fcGrossProfit">-</div>
                 </div>
             </div>
@@ -703,7 +703,7 @@ if ($is_owner) {
                 $('#fcLabaKotorFormula').text(fcFormat(res.summary.laba_kotor_formula));
                 $('#fcTotalBebanOps').text(fcFormat(res.summary.total_beban_operasional || 0));
                 $('#fcZakat').text(fcFormat(res.summary.zakat));
-                $('#fcGrossProfit').text(fcFormat(res.summary.gross_profit));
+                $('#fcGrossProfit').text(fcFormat(res.summary.net_profit));
                 $('#fcTotalJasaMekanik').text(fcFormat(res.summary.total_jasa_mekanik || 0));
                 
                 // Update chart

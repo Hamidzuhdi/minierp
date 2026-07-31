@@ -30,6 +30,58 @@ if ($action === 'get_accounts') {
     echo json_encode(['success' => true, 'data' => $rows]);
 }
 
+elseif ($action === 'list_spk_for_allocation') {
+    $keyword = trim($_GET['keyword'] ?? '');
+    $where = "s.status_spk <> 'Dibatalkan'";
+    if ($keyword !== '') {
+        $kwEsc = mysqli_real_escape_string($conn, $keyword);
+        $where .= " AND (s.kode_unik_reference LIKE '%$kwEsc%' OR c.name LIKE '%$kwEsc%' OR v.nomor_polisi LIKE '%$kwEsc%')";
+    }
+    $sql = "SELECT s.id, s.kode_unik_reference, c.name as customer_name, v.nomor_polisi
+            FROM spk s
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN vehicles v ON s.vehicle_id = v.id
+            WHERE $where
+            ORDER BY s.id DESC
+            LIMIT 300";
+    $res = mysqli_query($conn, $sql);
+    $rows = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $rows[] = $r;
+    }
+    echo json_encode(['success' => true, 'data' => $rows]);
+}
+
+elseif ($action === 'get_opl_allocation_detail') {
+    $expenseId = (int)($_GET['expense_id'] ?? 0);
+    if ($expenseId <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID pengeluaran tidak valid']);
+        exit;
+    }
+
+    $expRes = mysqli_query($conn, "SELECT id, tanggal, expense_name, amount, note FROM operational_expenses WHERE id = $expenseId LIMIT 1");
+    $expense = $expRes ? mysqli_fetch_assoc($expRes) : null;
+    if (!$expense) {
+        echo json_encode(['success' => false, 'message' => 'Pengeluaran tidak ditemukan']);
+        exit;
+    }
+
+    $sql = "SELECT oea.spk_id, oea.amount, s.kode_unik_reference, c.name as customer_name, v.nomor_polisi
+            FROM operational_expense_spk_allocations oea
+            JOIN spk s ON s.id = oea.spk_id
+            LEFT JOIN customers c ON s.customer_id = c.id
+            LEFT JOIN vehicles v ON s.vehicle_id = v.id
+            WHERE oea.operational_expense_id = $expenseId
+            ORDER BY oea.id ASC";
+    $res = mysqli_query($conn, $sql);
+    $allocations = [];
+    while ($r = mysqli_fetch_assoc($res)) {
+        $allocations[] = $r;
+    }
+
+    echo json_encode(['success' => true, 'expense' => $expense, 'allocations' => $allocations]);
+}
+
 elseif ($action === 'get_expense_categories') {
     $res = mysqli_query($conn, "SELECT id, code, name, description, status, is_active FROM expense_categories WHERE is_active = 1 ORDER BY name ASC");
     $rows = [];
@@ -557,6 +609,39 @@ elseif ($action === 'create_operational_expense') {
         exit;
     }
 
+    // Khusus kategori OPL (jasa pihak ketiga): wajib alokasi ke SPK, total alokasi harus == nominal.
+    $allocations = [];
+    if ($cat['code'] === 'OPL') {
+        $allocationsRaw = $_POST['allocations'] ?? '[]';
+        $decoded = json_decode($allocationsRaw, true);
+        if (!is_array($decoded) || count($decoded) === 0) {
+            echo json_encode(['success' => false, 'message' => 'Pengeluaran kategori OPL wajib dialokasikan ke minimal 1 SPK']);
+            exit;
+        }
+
+        $allocTotal = 0.0;
+        foreach ($decoded as $row) {
+            $spkId = (int)($row['spk_id'] ?? 0);
+            $allocAmount = (float)($row['amount'] ?? 0);
+            if ($spkId <= 0 || $allocAmount <= 0) {
+                echo json_encode(['success' => false, 'message' => 'Baris alokasi SPK tidak valid']);
+                exit;
+            }
+            $spkCheck = mysqli_query($conn, "SELECT id FROM spk WHERE id = $spkId LIMIT 1");
+            if (!$spkCheck || mysqli_num_rows($spkCheck) === 0) {
+                echo json_encode(['success' => false, 'message' => "SPK #$spkId tidak ditemukan"]);
+                exit;
+            }
+            $allocations[] = ['spk_id' => $spkId, 'amount' => $allocAmount];
+            $allocTotal += $allocAmount;
+        }
+
+        if (abs($allocTotal - $amount) > 0.5) {
+            echo json_encode(['success' => false, 'message' => 'Total alokasi SPK (Rp ' . number_format($allocTotal, 0, ',', '.') . ') harus sama dengan nominal OPL (Rp ' . number_format($amount, 0, ',', '.') . ')']);
+            exit;
+        }
+    }
+
     $txStatus = ($userRole === 'Owner') ? 'approved' : 'pending';
 
     mysqli_begin_transaction($conn);
@@ -575,6 +660,14 @@ elseif ($action === 'create_operational_expense') {
         }
 
         $expenseId = mysqli_insert_id($conn);
+
+        foreach ($allocations as $alloc) {
+            $sqlAlloc = "INSERT INTO operational_expense_spk_allocations (operational_expense_id, spk_id, amount)
+                         VALUES ($expenseId, {$alloc['spk_id']}, {$alloc['amount']})";
+            if (!mysqli_query($conn, $sqlAlloc)) {
+                throw new Exception('Gagal simpan alokasi SPK: ' . mysqli_error($conn));
+            }
+        }
 
         $tx = finance_add_transaction(
             $conn,
