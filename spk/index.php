@@ -982,7 +982,6 @@ function viewDetail(id) {
 
                 const grandBeforeDiscount = totalSparepart + totalJasa;
                 const grandAfterDiscount = Math.max(0, grandBeforeDiscount - discountApproved);
-                const biayaPihakKetiga = parseFloat(spk.biaya_pihak_ketiga) || 0;
 
                 html += `
                         </tbody>
@@ -990,11 +989,7 @@ function viewDetail(id) {
                             <tr><th colspan="3">Total Sparepart:</th><th>Rp ${formatNumber(totalSparepart)}</th></tr>
                             <tr><th colspan="3">Total Jasa Service:</th><th>Rp ${formatNumber(totalJasa)}</th></tr>
                             <tr><th colspan="3">Diskon Disetujui:</th><th>Rp ${formatNumber(discountApproved)}</th></tr>
-                            <tr><th colspan="3">GRAND TOTAL: <small class="text-muted fw-normal">(dipakai di invoice PDF customer)</small></th><th><strong>Rp ${formatNumber(grandAfterDiscount)}</strong></th></tr>
-                            ${(isOwner && biayaPihakKetiga > 0) ? `
-                            <tr><th colspan="3" class="text-danger">Biaya Pihak Ketiga (OPL):</th><th class="text-danger">- Rp ${formatNumber(biayaPihakKetiga)}</th></tr>
-                            <tr><th colspan="3">GRAND TOTAL FIX: <small class="text-muted fw-normal">(untung riil internal, setelah OPL)</small></th><th><strong>Rp ${formatNumber(Math.max(0, grandAfterDiscount - biayaPihakKetiga))}</strong></th></tr>
-                            ` : ''}
+                            <tr><th colspan="3">GRAND TOTAL:</th><th><strong>Rp ${formatNumber(grandAfterDiscount)}</strong></th></tr>
                         </tfoot>
                     </table>
 

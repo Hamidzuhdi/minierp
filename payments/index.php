@@ -228,19 +228,9 @@ include '../header.php';
                                 <textarea class="form-control" id="op_note" rows="2"></textarea>
                             </div>
 
-                            <div class="col-12" id="oplAllocationSection" style="display:none;">
-                                <div class="border rounded p-3 bg-light">
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <strong><i class="fas fa-random"></i> Alokasi ke SPK (wajib untuk kategori OPL)</strong>
-                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addOplAllocationRow()">
-                                            <i class="fas fa-plus"></i> Tambah SPK
-                                        </button>
-                                    </div>
-                                    <div id="oplAllocationRows"></div>
-                                    <div class="text-end mt-2">
-                                        <small>Total dialokasikan: <strong id="oplAllocationTotal">Rp 0</strong> / Nominal OPL: <strong id="oplAllocationTarget">Rp 0</strong></small>
-                                    </div>
-                                </div>
+                            <div class="col-md-4" id="oplBilledSection" style="display:none;">
+                                <label class="form-label">Nominal Ditagih ke Customer <small class="text-muted">(untuk hitung Laba OPL)</small></label>
+                                <input type="number" class="form-control" id="op_billed_amount" min="1" placeholder="Harga yang ditagih ke customer utk pekerjaan ini">
                             </div>
 
                             <div class="col-md-3 d-grid align-self-end">
@@ -424,34 +414,15 @@ include '../header.php';
     </div>
 </div>
 
-<div class="modal fade" id="oplAllocationModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+<div class="modal fade" id="oplDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="fas fa-list-ul text-primary"></i> Detail Alokasi SPK (OPL)</h5>
+                <h5 class="modal-title"><i class="fas fa-hand-holding-usd text-primary"></i> Detail Laba OPL</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="mb-3" id="oplAllocationHeader"></div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Kode SPK</th>
-                                <th>Customer</th>
-                                <th>No. Polisi</th>
-                                <th class="text-end">Nominal Alokasi</th>
-                            </tr>
-                        </thead>
-                        <tbody id="oplAllocationBody"><tr><td colspan="4" class="text-center text-muted">Loading...</td></tr></tbody>
-                        <tfoot>
-                            <tr>
-                                <th colspan="3" class="text-end">Total Alokasi:</th>
-                                <th class="text-end" id="oplAllocationBodyTotal">Rp 0</th>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
+                <div id="oplDetailBody"><p class="text-muted text-center mb-0">Loading...</p></div>
             </div>
         </div>
     </div>
@@ -461,132 +432,46 @@ include '../header.php';
 function fmt(n){ return 'Rp ' + parseFloat(n || 0).toLocaleString('id-ID'); }
 const isOwner = '<?php echo $user_role; ?>' === 'Owner';
 let expenseCategoryMap = {};
-let oplSpkList = [];
-let oplRowCounter = 0;
 
-function openOplAllocationModal(expenseId){
-    $('#oplAllocationHeader').html('<p class="text-muted mb-0">Loading...</p>');
-    $('#oplAllocationBody').html('<tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>');
-    $('#oplAllocationBodyTotal').text('Rp 0');
-    new bootstrap.Modal(document.getElementById('oplAllocationModal')).show();
+function openOplDetailModal(expenseId){
+    $('#oplDetailBody').html('<p class="text-muted text-center mb-0">Loading...</p>');
+    new bootstrap.Modal(document.getElementById('oplDetailModal')).show();
 
-    $.getJSON('backend.php', { action: 'get_opl_allocation_detail', expense_id: expenseId }, function(res){
+    $.getJSON('backend.php', { action: 'get_opl_detail', expense_id: expenseId }, function(res){
         if (!res.success) {
-            $('#oplAllocationHeader').html(`<p class="text-danger mb-0">${res.message}</p>`);
-            $('#oplAllocationBody').html('<tr><td colspan="4" class="text-center text-danger">Gagal memuat data</td></tr>');
+            $('#oplDetailBody').html(`<p class="text-danger text-center mb-0">${res.message}</p>`);
             return;
         }
 
         const exp = res.expense;
-        $('#oplAllocationHeader').html(`
-            <div><strong>${exp.expense_name}</strong> &mdash; ${exp.tanggal}</div>
-            <div>Total Pengeluaran: <strong>Rp ${parseFloat(exp.amount).toLocaleString('id-ID')}</strong></div>
-            ${exp.note ? `<div class="text-muted">Catatan: ${exp.note}</div>` : ''}
+        const billed = exp.billed_amount !== null ? parseFloat(exp.billed_amount) : null;
+        const laba = res.laba_opl !== null ? parseFloat(res.laba_opl) : null;
+        const labaColor = laba === null ? '' : (laba >= 0 ? 'text-success' : 'text-danger');
+
+        $('#oplDetailBody').html(`
+            <table class="table table-sm mb-0">
+                <tr><td>Tanggal</td><td class="text-end">${exp.tanggal}</td></tr>
+                <tr><td>Nama Biaya</td><td class="text-end">${exp.expense_name}</td></tr>
+                <tr><td>Nominal Dibayar ke Pihak Ketiga</td><td class="text-end">${fmt(exp.amount)}</td></tr>
+                <tr><td>Nominal Ditagih ke Customer</td><td class="text-end">${billed !== null ? fmt(billed) : '-'}</td></tr>
+                <tr class="fw-bold ${labaColor}"><td>Laba OPL</td><td class="text-end">${laba !== null ? fmt(laba) : '-'}</td></tr>
+                ${exp.note ? `<tr><td colspan="2" class="text-muted">Catatan: ${exp.note}</td></tr>` : ''}
+            </table>
         `);
-
-        let html = '';
-        let total = 0;
-        if (res.allocations.length > 0) {
-            res.allocations.forEach(function(a){
-                total += parseFloat(a.amount) || 0;
-                html += `<tr>
-                    <td>${a.kode_unik_reference}</td>
-                    <td>${a.customer_name || '-'}</td>
-                    <td>${a.nomor_polisi || '-'}</td>
-                    <td class="text-end">Rp ${parseFloat(a.amount).toLocaleString('id-ID')}</td>
-                </tr>`;
-            });
-        } else {
-            html = '<tr><td colspan="4" class="text-center text-muted">Belum ada alokasi SPK</td></tr>';
-        }
-        $('#oplAllocationBody').html(html);
-        $('#oplAllocationBodyTotal').text('Rp ' + total.toLocaleString('id-ID'));
     });
-}
-
-function loadSpkListForAllocation(callback){
-    $.getJSON('backend.php?action=list_spk_for_allocation', function(res){
-        if (res.success) {
-            oplSpkList = res.data;
-            // Refresh baris yang sudah terlanjur dirender sebelum data ini datang.
-            $('.opl-row-spk').each(function(){
-                const currentVal = $(this).val();
-                $(this).html(oplSpkOptions());
-                if (currentVal) $(this).val(currentVal);
-            });
-        }
-        if (typeof callback === 'function') callback();
-    });
-}
-
-function oplSpkOptions(){
-    let opts = '<option value="">-- Pilih SPK --</option>';
-    oplSpkList.forEach(function(s){
-        const label = s.kode_unik_reference + (s.customer_name ? ' - ' + s.customer_name : '') + (s.nomor_polisi ? ' (' + s.nomor_polisi + ')' : '');
-        opts += `<option value="${s.id}">${label}</option>`;
-    });
-    return opts;
-}
-
-function addOplAllocationRow(){
-    oplRowCounter++;
-    const rowId = 'oplRow' + oplRowCounter;
-    const html = `
-        <div class="row g-2 align-items-center mb-2" id="${rowId}">
-            <div class="col-md-7">
-                <select class="form-select form-select-sm opl-row-spk">${oplSpkOptions()}</select>
-            </div>
-            <div class="col-md-4">
-                <input type="number" class="form-control form-control-sm opl-row-amount" min="1" placeholder="Nominal" oninput="updateOplAllocationTotal()">
-            </div>
-            <div class="col-md-1">
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="$('#${rowId}').remove(); updateOplAllocationTotal();"><i class="fas fa-trash"></i></button>
-            </div>
-        </div>
-    `;
-    $('#oplAllocationRows').append(html);
-}
-
-function updateOplAllocationTotal(){
-    let total = 0;
-    $('.opl-row-amount').each(function(){
-        total += parseFloat($(this).val()) || 0;
-    });
-    $('#oplAllocationTotal').text('Rp ' + total.toLocaleString('id-ID'));
-    const target = parseFloat($('#op_amount').val()) || 0;
-    $('#oplAllocationTarget').text('Rp ' + target.toLocaleString('id-ID'));
-    $('#oplAllocationTotal').css('color', (Math.abs(total - target) < 0.5 && target > 0) ? '#198754' : '#dc3545');
-}
-
-function getOplAllocations(){
-    const rows = [];
-    $('.opl-row-spk').each(function(i){
-        const spkId = $(this).val();
-        const amount = parseFloat($('.opl-row-amount').eq(i).val()) || 0;
-        if (spkId && amount > 0) rows.push({ spk_id: parseInt(spkId), amount: amount });
-    });
-    return rows;
 }
 
 function isOplCategorySelected(){
     return $('#op_category').val() === 'OPL';
 }
 
-function toggleOplAllocationSection(){
+function toggleOplBilledSection(){
     if (isOplCategorySelected()) {
-        $('#oplAllocationSection').show();
-        if (oplSpkList.length === 0) {
-            loadSpkListForAllocation(function(){
-                if ($('.opl-row-spk').length === 0) addOplAllocationRow();
-            });
-        } else if ($('.opl-row-spk').length === 0) {
-            addOplAllocationRow();
-        }
+        $('#oplBilledSection').show();
     } else {
-        $('#oplAllocationSection').hide();
-        $('#oplAllocationRows').empty();
+        $('#oplBilledSection').hide();
+        $('#op_billed_amount').val('');
     }
-    updateOplAllocationTotal();
 }
 let currentTxPage = 1;
 const TX_PER_PAGE = 20;
@@ -608,23 +493,15 @@ $(document).ready(function(){
         loadPendingApprovals();
     }
 
-    $('#op_category').on('change', toggleOplAllocationSection);
-    $('#op_amount').on('input', updateOplAllocationTotal);
+    $('#op_category').on('change', toggleOplBilledSection);
 
     $('#operationalForm').on('submit', function(e){
         e.preventDefault();
 
-        let allocations = [];
         if (isOplCategorySelected()) {
-            allocations = getOplAllocations();
-            const target = parseFloat($('#op_amount').val()) || 0;
-            const total = allocations.reduce((sum, a) => sum + a.amount, 0);
-            if (allocations.length === 0) {
-                showAlert('warning', 'Kategori OPL wajib dialokasikan ke minimal 1 SPK');
-                return;
-            }
-            if (Math.abs(total - target) > 0.5) {
-                showAlert('warning', `Total alokasi SPK (Rp ${total.toLocaleString('id-ID')}) harus sama dengan nominal OPL (Rp ${target.toLocaleString('id-ID')})`);
+            const billed = parseFloat($('#op_billed_amount').val()) || 0;
+            if (billed <= 0) {
+                showAlert('warning', 'Kategori OPL wajib diisi nominal yang ditagih ke customer');
                 return;
             }
         }
@@ -641,7 +518,7 @@ $(document).ready(function(){
                 amount: $('#op_amount').val(),
                 account_code: $('#op_account').val(),
                 note: $('#op_note').val(),
-                allocations: JSON.stringify(allocations)
+                billed_amount: $('#op_billed_amount').val()
             },
             success: function(res){
                 if (res.success){
@@ -650,8 +527,8 @@ $(document).ready(function(){
                     $('#op_category').val('');
                     $('#op_amount').val('');
                     $('#op_note').val('');
-                    $('#oplAllocationRows').empty();
-                    $('#oplAllocationSection').hide();
+                    $('#op_billed_amount').val('');
+                    $('#oplBilledSection').hide();
                     loadSummary();
                     loadAccounts();
                     loadTransactions();
@@ -1003,8 +880,8 @@ function loadAccountExpenses() {
                 const cls = isOut ? 'text-danger' : 'text-success';
                 const sign = isOut ? '-' : '+';
                 const isOplRow2 = (row.category === 'OPL' && row.reference_type === 'operational' && row.reference_id);
-                const rowAttr2 = isOplRow2 ? `style="cursor:pointer;" onclick="openOplAllocationModal(${row.reference_id})" title="Klik untuk lihat detail alokasi SPK"` : '';
-                const categoryCell2 = isOplRow2 ? `${row.category} <i class="fas fa-list-ul text-primary" title="Lihat detail SPK"></i>` : (row.category || '-');
+                const rowAttr2 = isOplRow2 ? `style="cursor:pointer;" onclick="openOplDetailModal(${row.reference_id})" title="Klik untuk lihat Laba OPL"` : '';
+                const categoryCell2 = isOplRow2 ? `${row.category} <i class="fas fa-hand-holding-usd text-primary" title="Lihat Laba OPL"></i>` : (row.category || '-');
                 html += `<tr ${rowAttr2}>
                     <td>${row.tanggal || '-'}</td>
                     <td>${dirLabel}</td>
@@ -1139,8 +1016,8 @@ function loadTransactions(){
 
                     const statusBadge = getStatusBadgeHtml(t.status);
                     const isOplRow = (t.category === 'OPL' && t.reference_type === 'operational' && t.reference_id);
-                    const rowAttr = isOplRow ? `style="cursor:pointer;" onclick="openOplAllocationModal(${t.reference_id})" title="Klik untuk lihat detail alokasi SPK"` : '';
-                    const categoryCell = isOplRow ? `${t.category} <i class="fas fa-list-ul text-primary" title="Lihat detail SPK"></i>` : (t.category || '-');
+                    const rowAttr = isOplRow ? `style="cursor:pointer;" onclick="openOplDetailModal(${t.reference_id})" title="Klik untuk lihat Laba OPL"` : '';
+                    const categoryCell = isOplRow ? `${t.category} <i class="fas fa-hand-holding-usd text-primary" title="Lihat Laba OPL"></i>` : (t.category || '-');
 
                     html += `<tr ${rowAttr}>
                         <td>${t.tanggal}</td>

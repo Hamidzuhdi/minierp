@@ -590,6 +590,14 @@ if ($is_owner) {
                 </div>
             </div>
         </div>
+        <div class="col-lg-3 col-md-4 col-sm-6">
+            <div class="card border-0 shadow-sm text-white h-100" style="background-color: #6f42c1;" title="Nominal ditagih ke customer dikurangi nominal dibayar ke pihak ketiga (kategori OPL)">
+                <div class="card-body p-3">
+                    <div class="small mb-1">Laba OPL (Pihak Ketiga)</div>
+                    <div class="fw-bold" id="fcOplLaba">-</div>
+                </div>
+            </div>
+        </div>
     </div>
     
     <!-- Charts + Top Sparepart -->
@@ -705,6 +713,7 @@ if ($is_owner) {
                 $('#fcZakat').text(fcFormat(res.summary.zakat));
                 $('#fcGrossProfit').text(fcFormat(res.summary.net_profit));
                 $('#fcTotalJasaMekanik').text(fcFormat(res.summary.total_jasa_mekanik || 0));
+                $('#fcOplLaba').text(fcFormat(res.summary.opl_laba || 0));
                 
                 // Update chart
                 let labels = res.monthly.map(m => m.label);
