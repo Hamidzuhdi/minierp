@@ -149,7 +149,7 @@ elseif ($action === 'get_piutang_aktif') {
     }
     
     if ($export_type === 'excel') {
-        exportToExcel($data, 'Piutang Aktif', 'piutang_aktif', ['invoice_id', 'no_invoice', 'tanggal', 'customer_name', 'total', 'sudah_bayar', 'sisa_piutang', 'status_piutang']);
+        exportPiutangAktifExcel($data);
     } elseif ($export_type === 'pdf') {
         require_once 'vendor/autoload.php';
         $html = '<h2>Invoice Belum Bayar</h2>';
@@ -274,8 +274,197 @@ function exportToExcel($data, $sheet_name, $file_prefix, $columns) {
     header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
     header('Pragma: public');
     header('Content-Length: ' . strlen($csv_content));
-    
+
     echo $csv_content;
+    exit;
+}
+
+// 0-based column index -> Excel column letter (0=A, 1=B, ..., 26=AA, ...)
+function xlsxColLetter($index) {
+    $letter = '';
+    $index++;
+    while ($index > 0) {
+        $rem = ($index - 1) % 26;
+        $letter = chr(65 + $rem) . $letter;
+        $index = intdiv($index - 1, 26);
+    }
+    return $letter;
+}
+
+function xlsxTextCell($colIndex, $rowNum, $text, $styleId = null) {
+    $ref = xlsxColLetter($colIndex) . $rowNum;
+    $sAttr = $styleId !== null ? ' s="' . $styleId . '"' : '';
+    $escaped = htmlspecialchars((string)$text, ENT_QUOTES | ENT_XML1, 'UTF-8');
+    return '<c r="' . $ref . '"' . $sAttr . ' t="inlineStr"><is><t xml:space="preserve">' . $escaped . '</t></is></c>';
+}
+
+function xlsxNumberCell($colIndex, $rowNum, $number, $styleId = null) {
+    $ref = xlsxColLetter($colIndex) . $rowNum;
+    $sAttr = $styleId !== null ? ' s="' . $styleId . '"' : '';
+    $num = is_numeric($number) ? $number : 0;
+    return '<c r="' . $ref . '"' . $sAttr . '><v>' . $num . '</v></c>';
+}
+
+// Bangun 1 sheet <worksheet> dari array of rows, setiap row = array of ['type'=>'text'|'number','value'=>...,'style'=>int|null]
+function xlsxBuildSheetXml($rows, $colWidths = []) {
+    $xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n";
+    $xml .= '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+    if (!empty($colWidths)) {
+        $xml .= '<cols>';
+        foreach ($colWidths as $index => $width) {
+            $colNum = $index + 1;
+            $xml .= '<col min="' . $colNum . '" max="' . $colNum . '" width="' . $width . '" customWidth="1"/>';
+        }
+        $xml .= '</cols>';
+    }
+    $xml .= '<sheetData>';
+    $rowNum = 1;
+    foreach ($rows as $cells) {
+        $xml .= '<row r="' . $rowNum . '">';
+        $colIndex = 0;
+        foreach ($cells as $cell) {
+            if ($cell['type'] === 'number') {
+                $xml .= xlsxNumberCell($colIndex, $rowNum, $cell['value'], $cell['style'] ?? null);
+            } else {
+                $xml .= xlsxTextCell($colIndex, $rowNum, $cell['value'], $cell['style'] ?? null);
+            }
+            $colIndex++;
+        }
+        $xml .= '</row>';
+        $rowNum++;
+    }
+    $xml .= '</sheetData></worksheet>';
+    return $xml;
+}
+
+// Export 2 sheet dalam 1 file .xlsx asli (Office Open XML, dibangun via ZipArchive
+// bawaan PHP) - supaya dibuka Excel tanpa warning "format tidak cocok".
+function exportPiutangAktifExcel($data) {
+    if (empty($data)) {
+        echo "No data to export";
+        exit;
+    }
+
+    // Rekap per customer dari data yang sama (supaya konsisten dengan sheet detail)
+    $customerSummary = [];
+    foreach ($data as $row) {
+        $name = $row['customer_name'] !== null && $row['customer_name'] !== '' ? $row['customer_name'] : '(Tanpa Nama)';
+        if (!isset($customerSummary[$name])) {
+            $customerSummary[$name] = ['jumlah_invoice' => 0, 'total_hutang' => 0.0];
+        }
+        $customerSummary[$name]['jumlah_invoice']++;
+        $customerSummary[$name]['total_hutang'] += (float)$row['sisa_piutang'];
+    }
+    uasort($customerSummary, function ($a, $b) {
+        return $b['total_hutang'] <=> $a['total_hutang'];
+    });
+
+    $styleHeader = 1;
+    $styleCurrency = 2;
+
+    // Sheet 1: Detail Invoice
+    $sheet1Rows = [];
+    $sheet1Rows[] = array_map(function ($h) use ($styleHeader) {
+        return ['type' => 'text', 'value' => $h, 'style' => $styleHeader];
+    }, ['ID Invoice', 'No Invoice', 'Tanggal', 'Customer', 'Total', 'Sudah Bayar', 'Sisa Piutang', 'Status Piutang']);
+    foreach ($data as $row) {
+        $sheet1Rows[] = [
+            ['type' => 'number', 'value' => (int)$row['invoice_id']],
+            ['type' => 'text', 'value' => $row['no_invoice']],
+            ['type' => 'text', 'value' => $row['tanggal']],
+            ['type' => 'text', 'value' => $row['customer_name']],
+            ['type' => 'number', 'value' => (float)$row['total'], 'style' => $styleCurrency],
+            ['type' => 'number', 'value' => (float)$row['sudah_bayar'], 'style' => $styleCurrency],
+            ['type' => 'number', 'value' => (float)$row['sisa_piutang'], 'style' => $styleCurrency],
+            ['type' => 'text', 'value' => $row['status_piutang']],
+        ];
+    }
+
+    // Sheet 2: Rekap Total Hutang per Customer
+    $sheet2Rows = [];
+    $sheet2Rows[] = array_map(function ($h) use ($styleHeader) {
+        return ['type' => 'text', 'value' => $h, 'style' => $styleHeader];
+    }, ['Customer', 'Jumlah Invoice', 'Total Hutang']);
+    foreach ($customerSummary as $name => $sum) {
+        $sheet2Rows[] = [
+            ['type' => 'text', 'value' => $name],
+            ['type' => 'number', 'value' => (int)$sum['jumlah_invoice']],
+            ['type' => 'number', 'value' => (float)$sum['total_hutang'], 'style' => $styleCurrency],
+        ];
+    }
+
+    $contentTypesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' .
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' .
+        '<Default Extension="xml" ContentType="application/xml"/>' .
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' .
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' .
+        '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' .
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' .
+        '</Types>';
+
+    $rootRelsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' .
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' .
+        '</Relationships>';
+
+    $workbookRelsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' .
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' .
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>' .
+        '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' .
+        '</Relationships>';
+
+    $workbookXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' .
+        '<sheets>' .
+        '<sheet name="Detail Invoice" sheetId="1" r:id="rId1"/>' .
+        '<sheet name="Rekap per Customer" sheetId="2" r:id="rId2"/>' .
+        '</sheets>' .
+        '</workbook>';
+
+    $stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' .
+        '<numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;Rp &quot;#,##0"/></numFmts>' .
+        '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' .
+        '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF0F0F0"/><bgColor indexed="64"/></patternFill></fill></fills>' .
+        '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' .
+        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' .
+        '<cellXfs count="3">' .
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' .
+        '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>' .
+        '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' .
+        '</cellXfs>' .
+        '</styleSheet>';
+
+    $sheet1Xml = xlsxBuildSheetXml($sheet1Rows, [10, 16, 12, 24, 15, 15, 15, 14]);
+    $sheet2Xml = xlsxBuildSheetXml($sheet2Rows, [26, 14, 16]);
+
+    $filename = sanitizeFilename('piutang_aktif_' . date('YmdHis') . '.xlsx');
+    $tmpPath = tempnam(sys_get_temp_dir(), 'xlsx_');
+
+    $zip = new ZipArchive();
+    $zip->open($tmpPath, ZipArchive::OVERWRITE);
+    $zip->addEmptyDir('_rels');
+    $zip->addEmptyDir('xl');
+    $zip->addEmptyDir('xl/_rels');
+    $zip->addEmptyDir('xl/worksheets');
+    $zip->addFromString('[Content_Types].xml', $contentTypesXml);
+    $zip->addFromString('_rels/.rels', $rootRelsXml);
+    $zip->addFromString('xl/workbook.xml', $workbookXml);
+    $zip->addFromString('xl/_rels/workbook.xml.rels', $workbookRelsXml);
+    $zip->addFromString('xl/styles.xml', $stylesXml);
+    $zip->addFromString('xl/worksheets/sheet1.xml', $sheet1Xml);
+    $zip->addFromString('xl/worksheets/sheet2.xml', $sheet2Xml);
+    $zip->close();
+
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+    header('Pragma: public');
+    header('Content-Length: ' . filesize($tmpPath));
+    readfile($tmpPath);
+    unlink($tmpPath);
     exit;
 }
 
