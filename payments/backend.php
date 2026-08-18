@@ -30,6 +30,26 @@ if ($action === 'get_accounts') {
     echo json_encode(['success' => true, 'data' => $rows]);
 }
 
+elseif ($action === 'get_opl_detail') {
+    $expenseId = (int)($_GET['expense_id'] ?? 0);
+    if ($expenseId <= 0) {
+        echo json_encode(['success' => false, 'message' => 'ID pengeluaran tidak valid']);
+        exit;
+    }
+
+    $expRes = mysqli_query($conn, "SELECT id, tanggal, expense_name, amount, billed_amount, note FROM operational_expenses WHERE id = $expenseId LIMIT 1");
+    $expense = $expRes ? mysqli_fetch_assoc($expRes) : null;
+    if (!$expense) {
+        echo json_encode(['success' => false, 'message' => 'Pengeluaran tidak ditemukan']);
+        exit;
+    }
+
+    $billedAmount = $expense['billed_amount'] !== null ? (float)$expense['billed_amount'] : null;
+    $laba = $billedAmount !== null ? ($billedAmount - (float)$expense['amount']) : null;
+
+    echo json_encode(['success' => true, 'expense' => $expense, 'laba_opl' => $laba]);
+}
+
 elseif ($action === 'get_expense_categories') {
     $res = mysqli_query($conn, "SELECT id, code, name, description, status, is_active FROM expense_categories WHERE is_active = 1 ORDER BY name ASC");
     $rows = [];
@@ -557,15 +577,28 @@ elseif ($action === 'create_operational_expense') {
         exit;
     }
 
+    // Khusus kategori OPL (jasa pihak ketiga): wajib isi nominal yang ditagih ke customer,
+    // supaya Laba OPL (ditagih - dibayar ke pihak ketiga) bisa dihitung. Tidak dikaitkan ke SPK manapun.
+    $billedAmount = null;
+    if ($cat['code'] === 'OPL') {
+        $billedAmount = (float)($_POST['billed_amount'] ?? 0);
+        if ($billedAmount <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Pengeluaran kategori OPL wajib diisi nominal yang ditagih ke customer']);
+            exit;
+        }
+    }
+
     $txStatus = ($userRole === 'Owner') ? 'approved' : 'pending';
 
     mysqli_begin_transaction($conn);
     try {
-        $sql = "INSERT INTO operational_expenses (tanggal, expense_name, category_code, amount, account_id, note, created_by)
+        $billedAmountSql = $billedAmount !== null ? (string)$billedAmount : 'NULL';
+        $sql = "INSERT INTO operational_expenses (tanggal, expense_name, category_code, amount, billed_amount, account_id, note, created_by)
                 VALUES ('" . mysqli_real_escape_string($conn, $tanggal) . "',
                         '" . mysqli_real_escape_string($conn, $expenseName) . "',
                         '" . mysqli_real_escape_string($conn, $cat['code']) . "',
                         $amount,
+                        $billedAmountSql,
                         {$account['id']},
                         '" . mysqli_real_escape_string($conn, $note) . "',
                         " . (int)$_SESSION['user_id'] . ")";

@@ -47,12 +47,13 @@ $reminder_from_query = (($_GET['reminder'] ?? '') === '1' || ($_GET['reminder'] 
                                     <th>Telepon</th>
                                     <th>Alamat</th>
                                     <th>Kendaraan</th>
+                                    <th>Status Piutang</th>
                                     <th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="customerTableBody">
                                 <tr>
-                                    <td colspan="6" class="text-center">Loading...</td>
+                                    <td colspan="7" class="text-center">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -264,14 +265,19 @@ function displayCustomers(customers) {
     let html = '';
     
     if (customers.length === 0) {
-        html = '<tr><td colspan="6" class="text-center">Belum ada data customer</td></tr>';
+        html = '<tr><td colspan="7" class="text-center">Belum ada data customer</td></tr>';
     } else {
         customers.forEach(function(customer) {
             let vehicleInfo = '-';
             if (customer.vehicles && customer.vehicles.length > 0) {
-                vehicleInfo = customer.vehicles.map(v => `<span class="badge bg-primary">${v.nomor_polisi} - ${v.model || v.merk || 'N/A'}</span>`).join(' ');
+                vehicleInfo = customer.vehicles.map(v => `<div class="mb-1"><span class="badge bg-primary">${v.nomor_polisi} - ${v.model || v.merk || 'N/A'}</span></div>`).join('');
             }
-            
+
+            let hutang = parseFloat(customer.total_hutang) || 0;
+            let piutangInfo = hutang > 0
+                ? `<span class="badge bg-danger">Hutang: Rp ${hutang.toLocaleString('id-ID')}</span>`
+                : `<span class="badge bg-success">Lunas</span>`;
+
             html += `
                 <tr>
                     <td>${customer.id}</td>
@@ -279,6 +285,7 @@ function displayCustomers(customers) {
                     <td>${customer.phone || '-'}</td>
                     <td>${customer.address ? (customer.address.length > 50 ? customer.address.substring(0, 50) + '...' : customer.address) : '-'}</td>
                     <td>${vehicleInfo}</td>
+                    <td>${piutangInfo}</td>
                     <td>
                         <button class="btn btn-info btn-sm" onclick="viewCustomerDetail(${customer.id})" title="Detail & Kendaraan">
                             <i class="fas fa-eye"></i>

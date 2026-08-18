@@ -14,6 +14,7 @@ $month = trim($_GET['month'] ?? '');
 $month_esc = !empty($month) ? mysqli_real_escape_string($conn, $month) : '';
 $month_filter = !empty($month_esc) ? "AND DATE_FORMAT(ft.tanggal, '%Y-%m') = '$month_esc'" : '';
 $month_filter_invoice = !empty($month_esc) ? "AND DATE_FORMAT(i.tanggal, '%Y-%m') = '$month_esc'" : '';
+$month_filter_spk_tanggal = !empty($month_esc) ? "AND DATE_FORMAT(s.tanggal, '%Y-%m') = '$month_esc'" : '';
 
 $qIn = "SELECT COALESCE(SUM(ft.amount), 0) total
                 FROM finance_transactions ft
@@ -72,11 +73,11 @@ $variable_expense_total = (float)mysqli_fetch_assoc(mysqli_query($conn, $qVariab
 $has_hpp_col_res = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'hpp_satuan'");
 $has_hpp_col = $has_hpp_col_res && mysqli_num_rows($has_hpp_col_res) > 0;
 
-$qSpareRevenue = "SELECT COALESCE(SUM(si.qty * COALESCE(NULLIF(si.harga_satuan, 0), sp.harga_jual_default)), 0) total
+// Accrual: dihitung begitu item dipakai di SPK, tidak menunggu invoice Lunas.
+$qSpareRevenue = "SELECT COALESCE(SUM(si.subtotal), 0) total
                   FROM spk_items si
-                  JOIN spareparts sp ON sp.id = si.sparepart_id
-                  JOIN invoices i ON i.spk_id = si.spk_id
-                  WHERE i.status_piutang = 'Lunas' $month_filter_invoice";
+                  JOIN spk s ON s.id = si.spk_id
+                  WHERE s.status_spk <> 'Dibatalkan' $month_filter_spk_tanggal";
 
 $qServiceRevenue = "SELECT COALESCE(SUM(i.biaya_jasa), 0) total
                     FROM invoices i
@@ -85,14 +86,14 @@ $qServiceRevenue = "SELECT COALESCE(SUM(i.biaya_jasa), 0) total
 if ($has_hpp_col) {
     $qSpareHpp = "SELECT COALESCE(SUM(si.qty * si.hpp_satuan), 0) total
                   FROM spk_items si
-                  JOIN invoices i ON i.spk_id = si.spk_id
-                  WHERE i.status_piutang = 'Lunas' $month_filter_invoice";
+                  JOIN spk s ON s.id = si.spk_id
+                  WHERE s.status_spk <> 'Dibatalkan' $month_filter_spk_tanggal";
 } else {
     $qSpareHpp = "SELECT COALESCE(SUM(si.qty * sp.harga_beli_default), 0) total
                   FROM spk_items si
                   JOIN spareparts sp ON sp.id = si.sparepart_id
-                  JOIN invoices i ON i.spk_id = si.spk_id
-                  WHERE i.status_piutang = 'Lunas' $month_filter_invoice";
+                  JOIN spk s ON s.id = si.spk_id
+                  WHERE s.status_spk <> 'Dibatalkan' $month_filter_spk_tanggal";
 }
 
 $spare_revenue = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareRevenue))['total'];
@@ -101,8 +102,17 @@ $spare_hpp = (float)mysqli_fetch_assoc(mysqli_query($conn, $qSpareHpp))['total']
 $spare_profit = $spare_revenue - $spare_hpp;
 $laba_kotor_formula = $total_in - ($sales_discount + $spare_hpp);
 $total_beban_operasional = $fixed_expense_total + $variable_expense_total;
-$zakat = $laba_kotor_formula > 0 ? ($laba_kotor_formula * 0.025) : 0;
-$gross_profit = $laba_kotor_formula - ($total_beban_operasional + $zakat);
+// Zakat dihitung dari Laba Bersih (setelah beban operasional), bukan dari Laba Kotor.
+$laba_bersih_sebelum_zakat = $laba_kotor_formula - $total_beban_operasional;
+$zakat = $laba_bersih_sebelum_zakat > 0 ? ($laba_bersih_sebelum_zakat * 0.025) : 0;
+$net_profit = $laba_bersih_sebelum_zakat - $zakat;
+
+// Laba OPL (pekerjaan pihak ketiga): nominal ditagih ke customer - nominal dibayar ke pihak ketiga.
+$month_filter_oe = !empty($month_esc) ? "AND DATE_FORMAT(oe.tanggal, '%Y-%m') = '$month_esc'" : '';
+$qOplLaba = "SELECT COALESCE(SUM(oe.billed_amount - oe.amount), 0) total
+             FROM operational_expenses oe
+             WHERE oe.category_code = 'OPL' AND oe.billed_amount IS NOT NULL $month_filter_oe";
+$opl_laba = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOplLaba))['total'];
 
 $cashAcc = finance_get_account_by_code($conn, 'cash');
 $bankAcc = finance_get_account_by_code($conn, 'bank');
@@ -183,10 +193,14 @@ th { background: #f5f5f5; text-align: left; }
     <div class="summary-row"><span class="summary-title">9. Semua expense_categories status = 0</span><span class="summary-value">' . rupiah($variable_expense_total) . '</span></div>
     <div class="summary-row"><span class="summary-title">10. Total Beban Operasional [7 + 9]</span><span class="summary-value">' . rupiah($total_beban_operasional) . '</span></div>
     <div class="summary-row"><span class="summary-detail">Detail #10: ' . rupiah($fixed_expense_total) . ' + ' . rupiah($variable_expense_total) . ' = ' . rupiah($total_beban_operasional) . '</span></div>
-    <div class="summary-row"><span class="summary-title">11. Zakat 2.5%</span><span class="summary-value">' . rupiah($zakat) . '</span></div>
-    <div class="summary-row"><span class="summary-detail">Detail #11: 2.5% x ' . rupiah($laba_kotor_formula) . ' = ' . rupiah($zakat) . '</span></div>
-    <div class="summary-row"><span class="summary-title">12. Gross Profit [4 - (10 + 11)]</span><span class="summary-value">' . rupiah($gross_profit) . '</span></div>
-    <div class="summary-row"><span class="summary-detail">Detail #12: ' . rupiah($laba_kotor_formula) . ' - (' . rupiah($total_beban_operasional) . ' + ' . rupiah($zakat) . ') = ' . rupiah($gross_profit) . '</span></div>
+    <div class="summary-row"><span class="summary-title">11. Laba Bersih Sebelum Zakat [4 - 10]</span><span class="summary-value">' . rupiah($laba_bersih_sebelum_zakat) . '</span></div>
+    <div class="summary-row"><span class="summary-detail">Detail #11: ' . rupiah($laba_kotor_formula) . ' - ' . rupiah($total_beban_operasional) . ' = ' . rupiah($laba_bersih_sebelum_zakat) . '</span></div>
+    <div class="summary-row"><span class="summary-title">12. Zakat 2.5%</span><span class="summary-value">' . rupiah($zakat) . '</span></div>
+    <div class="summary-row"><span class="summary-detail">Detail #12: 2.5% x ' . rupiah($laba_bersih_sebelum_zakat) . ' = ' . rupiah($zakat) . '</span></div>
+    <div class="summary-row"><span class="summary-title">13. Net Profit / Laba Bersih [11 - 12]</span><span class="summary-value">' . rupiah($net_profit) . '</span></div>
+    <div class="summary-row"><span class="summary-detail">Detail #13: ' . rupiah($laba_bersih_sebelum_zakat) . ' - ' . rupiah($zakat) . ' = ' . rupiah($net_profit) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Laba OPL (Pihak Ketiga)</span><span class="summary-value">' . rupiah($opl_laba) . '</span></div>
+    <div class="summary-row"><span class="summary-detail">Ditagih ke customer dikurangi dibayar ke pihak ketiga (kategori OPL), di luar Net Profit di atas</span></div>
     <div class="summary-row"><span class="summary-title">Saldo Akhir (Cash + Bank)</span><span class="summary-value">' . rupiah($saldo_akhir) . '</span></div>
 </div>
 

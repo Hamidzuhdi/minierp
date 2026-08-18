@@ -434,7 +434,7 @@ elseif ($action === 'read_one') {
         }
         
         $row['warehouse_requests'] = $warehouse_requests;
-        
+
         echo json_encode(['success' => true, 'data' => $row]);
     } else {
         echo json_encode(['success' => false, 'message' => 'SPK tidak ditemukan']);

@@ -982,7 +982,7 @@ function viewDetail(id) {
 
                 const grandBeforeDiscount = totalSparepart + totalJasa;
                 const grandAfterDiscount = Math.max(0, grandBeforeDiscount - discountApproved);
-                
+
                 html += `
                         </tbody>
                         <tfoot>

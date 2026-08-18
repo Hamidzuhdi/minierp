@@ -142,6 +142,18 @@ elseif ($action === 'read') {
         }
         
         $row['vehicles'] = $vehicles;
+
+        // Total piutang aktif (invoice belum lunas) milik customer ini
+        $piutang_sql = "SELECT COALESCE(SUM(i.total - COALESCE(p.total_bayar, 0)), 0) as piutang
+                        FROM invoices i
+                        JOIN spk s ON i.spk_id = s.id
+                        LEFT JOIN (SELECT invoice_id, SUM(amount) as total_bayar FROM payments GROUP BY invoice_id) p ON i.id = p.invoice_id
+                        WHERE s.customer_id = $customer_id
+                          AND i.status_piutang != 'Lunas'
+                          AND i.status_piutang != 'Tidak_Aktif'";
+        $piutang_result = mysqli_query($conn, $piutang_sql);
+        $row['total_hutang'] = $piutang_result ? (float)mysqli_fetch_assoc($piutang_result)['piutang'] : 0;
+
         $customers[] = $row;
     }
     

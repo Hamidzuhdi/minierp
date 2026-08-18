@@ -227,6 +227,12 @@ include '../header.php';
                                 <label class="form-label">Catatan</label>
                                 <textarea class="form-control" id="op_note" rows="2"></textarea>
                             </div>
+
+                            <div class="col-md-4" id="oplBilledSection" style="display:none;">
+                                <label class="form-label">Nominal Ditagih ke Customer <small class="text-muted">(untuk hitung Laba OPL)</small></label>
+                                <input type="number" class="form-control" id="op_billed_amount" min="1" placeholder="Harga yang ditagih ke customer utk pekerjaan ini">
+                            </div>
+
                             <div class="col-md-3 d-grid align-self-end">
                                 <button class="btn btn-primary" type="submit"><i class="fas fa-save"></i> Simpan Pengeluaran</button>
                             </div>
@@ -408,10 +414,65 @@ include '../header.php';
     </div>
 </div>
 
+<div class="modal fade" id="oplDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-hand-holding-usd text-primary"></i> Detail Laba OPL</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="oplDetailBody"><p class="text-muted text-center mb-0">Loading...</p></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 function fmt(n){ return 'Rp ' + parseFloat(n || 0).toLocaleString('id-ID'); }
 const isOwner = '<?php echo $user_role; ?>' === 'Owner';
 let expenseCategoryMap = {};
+
+function openOplDetailModal(expenseId){
+    $('#oplDetailBody').html('<p class="text-muted text-center mb-0">Loading...</p>');
+    new bootstrap.Modal(document.getElementById('oplDetailModal')).show();
+
+    $.getJSON('backend.php', { action: 'get_opl_detail', expense_id: expenseId }, function(res){
+        if (!res.success) {
+            $('#oplDetailBody').html(`<p class="text-danger text-center mb-0">${res.message}</p>`);
+            return;
+        }
+
+        const exp = res.expense;
+        const billed = exp.billed_amount !== null ? parseFloat(exp.billed_amount) : null;
+        const laba = res.laba_opl !== null ? parseFloat(res.laba_opl) : null;
+        const labaColor = laba === null ? '' : (laba >= 0 ? 'text-success' : 'text-danger');
+
+        $('#oplDetailBody').html(`
+            <table class="table table-sm mb-0">
+                <tr><td>Tanggal</td><td class="text-end">${exp.tanggal}</td></tr>
+                <tr><td>Nama Biaya</td><td class="text-end">${exp.expense_name}</td></tr>
+                <tr><td>Nominal Dibayar ke Pihak Ketiga</td><td class="text-end">${fmt(exp.amount)}</td></tr>
+                <tr><td>Nominal Ditagih ke Customer</td><td class="text-end">${billed !== null ? fmt(billed) : '-'}</td></tr>
+                <tr class="fw-bold ${labaColor}"><td>Laba OPL</td><td class="text-end">${laba !== null ? fmt(laba) : '-'}</td></tr>
+                ${exp.note ? `<tr><td colspan="2" class="text-muted">Catatan: ${exp.note}</td></tr>` : ''}
+            </table>
+        `);
+    });
+}
+
+function isOplCategorySelected(){
+    return $('#op_category').val() === 'OPL';
+}
+
+function toggleOplBilledSection(){
+    if (isOplCategorySelected()) {
+        $('#oplBilledSection').show();
+    } else {
+        $('#oplBilledSection').hide();
+        $('#op_billed_amount').val('');
+    }
+}
 let currentTxPage = 1;
 const TX_PER_PAGE = 20;
 let currentExpenseAccountCode = '';
@@ -432,8 +493,19 @@ $(document).ready(function(){
         loadPendingApprovals();
     }
 
+    $('#op_category').on('change', toggleOplBilledSection);
+
     $('#operationalForm').on('submit', function(e){
         e.preventDefault();
+
+        if (isOplCategorySelected()) {
+            const billed = parseFloat($('#op_billed_amount').val()) || 0;
+            if (billed <= 0) {
+                showAlert('warning', 'Kategori OPL wajib diisi nominal yang ditagih ke customer');
+                return;
+            }
+        }
+
         $.ajax({
             url: 'backend.php',
             type: 'POST',
@@ -445,7 +517,8 @@ $(document).ready(function(){
                 category_code: $('#op_category').val(),
                 amount: $('#op_amount').val(),
                 account_code: $('#op_account').val(),
-                note: $('#op_note').val()
+                note: $('#op_note').val(),
+                billed_amount: $('#op_billed_amount').val()
             },
             success: function(res){
                 if (res.success){
@@ -454,6 +527,8 @@ $(document).ready(function(){
                     $('#op_category').val('');
                     $('#op_amount').val('');
                     $('#op_note').val('');
+                    $('#op_billed_amount').val('');
+                    $('#oplBilledSection').hide();
                     loadSummary();
                     loadAccounts();
                     loadTransactions();
@@ -804,11 +879,14 @@ function loadAccountExpenses() {
                 const isOut = (row.direction === 'out' || row.direction === 'transfer_out');
                 const cls = isOut ? 'text-danger' : 'text-success';
                 const sign = isOut ? '-' : '+';
-                html += `<tr>
+                const isOplRow2 = (row.category === 'OPL' && row.reference_type === 'operational' && row.reference_id);
+                const rowAttr2 = isOplRow2 ? `style="cursor:pointer;" onclick="openOplDetailModal(${row.reference_id})" title="Klik untuk lihat Laba OPL"` : '';
+                const categoryCell2 = isOplRow2 ? `${row.category} <i class="fas fa-hand-holding-usd text-primary" title="Lihat Laba OPL"></i>` : (row.category || '-');
+                html += `<tr ${rowAttr2}>
                     <td>${row.tanggal || '-'}</td>
                     <td>${dirLabel}</td>
                     <td>${getStatusBadgeHtml(row.status)}</td>
-                    <td>${row.category || '-'}</td>
+                    <td>${categoryCell2}</td>
                     <td>${reference}</td>
                     <td>${creator}</td>
                     <td>${row.note || '-'}</td>
@@ -937,13 +1015,16 @@ function loadTransactions(){
                     }
 
                     const statusBadge = getStatusBadgeHtml(t.status);
+                    const isOplRow = (t.category === 'OPL' && t.reference_type === 'operational' && t.reference_id);
+                    const rowAttr = isOplRow ? `style="cursor:pointer;" onclick="openOplDetailModal(${t.reference_id})" title="Klik untuk lihat Laba OPL"` : '';
+                    const categoryCell = isOplRow ? `${t.category} <i class="fas fa-hand-holding-usd text-primary" title="Lihat Laba OPL"></i>` : (t.category || '-');
 
-                    html += `<tr>
+                    html += `<tr ${rowAttr}>
                         <td>${t.tanggal}</td>
                         <td>${accountLabel}</td>
                         <td>${directionLabel}</td>
                         <td>${statusBadge}</td>
-                        <td>${t.category || '-'}</td>
+                        <td>${categoryCell}</td>
                         <td>${(t.reference_type || '-')}${t.reference_id ? (' #' + t.reference_id) : ''}</td>
                         <td>${creatorLabel}</td>
                         <td>${t.note || '-'}</td>
