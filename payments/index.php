@@ -462,7 +462,8 @@ function openOplDetailModal(expenseId){
 }
 
 function isOplCategorySelected(){
-    return $('#op_category').val() === 'OPL';
+    // Kategori bisa "OPL", "OPL JASA", "OPL PART", dst - cek substring pada code.
+    return /OPL/i.test($('#op_category').val() || '');
 }
 
 function toggleOplBilledSection(){
@@ -879,7 +880,7 @@ function loadAccountExpenses() {
                 const isOut = (row.direction === 'out' || row.direction === 'transfer_out');
                 const cls = isOut ? 'text-danger' : 'text-success';
                 const sign = isOut ? '-' : '+';
-                const isOplRow2 = (row.category === 'OPL' && row.reference_type === 'operational' && row.reference_id);
+                const isOplRow2 = (/OPL/i.test(row.category || '') && row.reference_type === 'operational' && row.reference_id);
                 const rowAttr2 = isOplRow2 ? `style="cursor:pointer;" onclick="openOplDetailModal(${row.reference_id})" title="Klik untuk lihat Laba OPL"` : '';
                 const categoryCell2 = isOplRow2 ? `${row.category} <i class="fas fa-hand-holding-usd text-primary" title="Lihat Laba OPL"></i>` : (row.category || '-');
                 html += `<tr ${rowAttr2}>
@@ -1015,7 +1016,7 @@ function loadTransactions(){
                     }
 
                     const statusBadge = getStatusBadgeHtml(t.status);
-                    const isOplRow = (t.category === 'OPL' && t.reference_type === 'operational' && t.reference_id);
+                    const isOplRow = (/OPL/i.test(t.category || '') && t.reference_type === 'operational' && t.reference_id);
                     const rowAttr = isOplRow ? `style="cursor:pointer;" onclick="openOplDetailModal(${t.reference_id})" title="Klik untuk lihat Laba OPL"` : '';
                     const categoryCell = isOplRow ? `${t.category} <i class="fas fa-hand-holding-usd text-primary" title="Lihat Laba OPL"></i>` : (t.category || '-');
 

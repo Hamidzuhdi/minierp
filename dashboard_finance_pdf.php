@@ -108,11 +108,21 @@ $zakat = $laba_bersih_sebelum_zakat > 0 ? ($laba_bersih_sebelum_zakat * 0.025) :
 $net_profit = $laba_bersih_sebelum_zakat - $zakat;
 
 // Laba OPL (pekerjaan pihak ketiga): nominal ditagih ke customer - nominal dibayar ke pihak ketiga.
+// "OPL" ditandai lewat category_code (mis. "OPL JASA", "OPL PART") - kategori aktif yang
+// dipakai menandai lewat code.
 $month_filter_oe = !empty($month_esc) ? "AND DATE_FORMAT(oe.tanggal, '%Y-%m') = '$month_esc'" : '';
-$qOplLaba = "SELECT COALESCE(SUM(oe.billed_amount - oe.amount), 0) total
+
+$qOplLabaJasa = "SELECT COALESCE(SUM(oe.billed_amount - oe.amount), 0) total
              FROM operational_expenses oe
-             WHERE oe.category_code = 'OPL' AND oe.billed_amount IS NOT NULL $month_filter_oe";
-$opl_laba = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOplLaba))['total'];
+             WHERE oe.category_code LIKE '%OPL%' AND oe.category_code LIKE '%JASA%'
+               AND oe.billed_amount IS NOT NULL $month_filter_oe";
+$opl_laba_jasa = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOplLabaJasa))['total'];
+
+$qOplLabaPart = "SELECT COALESCE(SUM(oe.billed_amount - oe.amount), 0) total
+             FROM operational_expenses oe
+             WHERE oe.category_code LIKE '%OPL%' AND oe.category_code LIKE '%PART%'
+               AND oe.billed_amount IS NOT NULL $month_filter_oe";
+$opl_laba_part = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOplLabaPart))['total'];
 
 $cashAcc = finance_get_account_by_code($conn, 'cash');
 $bankAcc = finance_get_account_by_code($conn, 'bank');
@@ -199,8 +209,9 @@ th { background: #f5f5f5; text-align: left; }
     <div class="summary-row"><span class="summary-detail">Detail #12: 2.5% x ' . rupiah($laba_bersih_sebelum_zakat) . ' = ' . rupiah($zakat) . '</span></div>
     <div class="summary-row"><span class="summary-title">13. Net Profit / Laba Bersih [11 - 12]</span><span class="summary-value">' . rupiah($net_profit) . '</span></div>
     <div class="summary-row"><span class="summary-detail">Detail #13: ' . rupiah($laba_bersih_sebelum_zakat) . ' - ' . rupiah($zakat) . ' = ' . rupiah($net_profit) . '</span></div>
-    <div class="summary-row"><span class="summary-title">Laba OPL (Pihak Ketiga)</span><span class="summary-value">' . rupiah($opl_laba) . '</span></div>
-    <div class="summary-row"><span class="summary-detail">Ditagih ke customer dikurangi dibayar ke pihak ketiga (kategori OPL), di luar Net Profit di atas</span></div>
+    <div class="summary-row"><span class="summary-title">Laba OPL Jasa</span><span class="summary-value">' . rupiah($opl_laba_jasa) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Laba OPL Part</span><span class="summary-value">' . rupiah($opl_laba_part) . '</span></div>
+    <div class="summary-row"><span class="summary-detail">Ditagih ke customer dikurangi dibayar ke pihak ketiga (kategori OPL JASA/OPL PART), di luar Net Profit di atas</span></div>
     <div class="summary-row"><span class="summary-title">Saldo Akhir (Cash + Bank)</span><span class="summary-value">' . rupiah($saldo_akhir) . '</span></div>
 </div>
 
