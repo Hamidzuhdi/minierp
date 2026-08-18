@@ -579,8 +579,10 @@ elseif ($action === 'create_operational_expense') {
 
     // Khusus kategori OPL (jasa pihak ketiga): wajib isi nominal yang ditagih ke customer,
     // supaya Laba OPL (ditagih - dibayar ke pihak ketiga) bisa dihitung. Tidak dikaitkan ke SPK manapun.
+    // "OPL" ditandai lewat CODE kategori (mis. "OPL JASA", "OPL PART") - kategori aktif yang
+    // sebenarnya dipakai menandai lewat code, bukan name.
     $billedAmount = null;
-    if ($cat['code'] === 'OPL') {
+    if (stripos($cat['code'], 'OPL') !== false) {
         $billedAmount = (float)($_POST['billed_amount'] ?? 0);
         if ($billedAmount <= 0) {
             echo json_encode(['success' => false, 'message' => 'Pengeluaran kategori OPL wajib diisi nominal yang ditagih ke customer']);

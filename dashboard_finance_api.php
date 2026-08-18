@@ -113,12 +113,21 @@ $qTotalJasa = "SELECT COALESCE(SUM(ss.subtotal), 0) total
 $total_jasa_mekanik = (float)mysqli_fetch_assoc(mysqli_query($conn, $qTotalJasa))['total'];
 
 // Laba OPL (pekerjaan pihak ketiga): nominal ditagih ke customer - nominal dibayar ke pihak ketiga.
-// Tidak dikaitkan ke SPK manapun, murni dari operational_expenses kategori OPL.
+// Tidak dikaitkan ke SPK manapun, murni dari operational_expenses. "OPL" ditandai lewat
+// category_code (mis. "OPL JASA", "OPL PART") - kategori aktif yang dipakai menandai lewat code.
 $month_filter_oe = !empty($month_esc) ? "AND DATE_FORMAT(oe.tanggal, '%Y-%m') = '$month_esc'" : '';
-$qOplLaba = "SELECT COALESCE(SUM(oe.billed_amount - oe.amount), 0) total
+
+$qOplLabaJasa = "SELECT COALESCE(SUM(oe.billed_amount - oe.amount), 0) total
              FROM operational_expenses oe
-             WHERE oe.category_code = 'OPL' AND oe.billed_amount IS NOT NULL $month_filter_oe";
-$opl_laba = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOplLaba))['total'];
+             WHERE oe.category_code LIKE '%OPL%' AND oe.category_code LIKE '%JASA%'
+               AND oe.billed_amount IS NOT NULL $month_filter_oe";
+$opl_laba_jasa = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOplLabaJasa))['total'];
+
+$qOplLabaPart = "SELECT COALESCE(SUM(oe.billed_amount - oe.amount), 0) total
+             FROM operational_expenses oe
+             WHERE oe.category_code LIKE '%OPL%' AND oe.category_code LIKE '%PART%'
+               AND oe.billed_amount IS NOT NULL $month_filter_oe";
+$opl_laba_part = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOplLabaPart))['total'];
 
 $laba_kotor_formula = $total_in - ($sales_discount + $spare_hpp);
 $total_beban_operasional = $fixed_expense_total + $variable_expense_total;
@@ -244,7 +253,8 @@ echo json_encode([
         'zakat' => $zakat,
         'net_profit' => $net_profit,
         'total_jasa_mekanik' => $total_jasa_mekanik,
-        'opl_laba' => $opl_laba,
+        'opl_laba_jasa' => $opl_laba_jasa,
+        'opl_laba_part' => $opl_laba_part,
         'net_cashflow' => $total_in - $total_out,
         'saldo_akhir' => $saldo_akhir,
     ],
