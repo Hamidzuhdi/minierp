@@ -102,29 +102,29 @@ include '../header.php';
                 <h5 class="modal-title">Input Pembayaran / Cicilan</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form id="paymentForm">
+            <form id="paymentForm" enctype="multipart/form-data">
                 <div class="modal-body">
                     <input type="hidden" name="action" value="create_payment">
                     <input type="hidden" id="payment_invoice_id" name="invoice_id">
-                    
+
                     <div class="alert alert-info" id="payment_info">
                         <strong>Sisa Piutang:</strong> <span id="payment_sisa">Rp 0</span><br>
                         <small class="text-muted">
-                            <i class="fas fa-info-circle"></i> Input pembayaran sesuai yang diterima. 
+                            <i class="fas fa-info-circle"></i> Input pembayaran sesuai yang diterima.
                             Bayar penuh = Lunas, Bayar sebagian = Cicilan. Status otomatis terupdate.
                         </small>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label for="amount" class="form-label">Jumlah Bayar *</label>
                         <input type="number" class="form-control" id="amount" name="amount" step="0.01" min="0" required>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label for="payment_date" class="form-label">Tanggal Bayar *</label>
                         <input type="date" class="form-control" id="payment_date" name="payment_date" required>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label for="payment_method" class="form-label">Metode Pembayaran *</label>
                         <select class="form-select" id="payment_method" name="payment_method" required>
@@ -136,7 +136,14 @@ include '../header.php';
                             <i class="fas fa-info-circle"></i> Pembayaran rekening akan tersimpan sebagai transfer di sistem
                         </small>
                     </div>
-                    
+
+                    <div class="mb-3">
+                        <label for="payment_proof_input" class="form-label">Bukti Pembayaran (Foto) <span class="text-muted fw-normal">(Opsional)</span></label>
+                        <input type="file" class="form-control" id="payment_proof_input" name="proof[]" accept="image/*" multiple>
+                        <small class="text-muted d-block mt-1">Format JPG/PNG/WEBP, maks 5MB per foto, maks 5 foto. Boleh lebih dari 1 foto.</small>
+                        <div class="d-flex flex-wrap gap-2 mt-2" id="payment_proof_preview"></div>
+                    </div>
+
                     <div class="mb-3">
                         <label for="notes" class="form-label">Catatan (Opsional)</label>
                         <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
@@ -198,12 +205,43 @@ include '../header.php';
     </div>
 </div>
 
+<!-- Modal Lightbox Bukti Pembayaran -->
+<div class="modal fade" id="proofLightboxModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-0">
+                <h6 class="modal-title text-white" id="proofLightboxCounter">Bukti Pembayaran</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center position-relative">
+                <button type="button" class="btn btn-light position-absolute top-50 start-0 translate-middle-y ms-2" id="proofLightboxPrev" onclick="proofLightboxNav(-1)">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <img id="proofLightboxImg" src="" class="img-fluid" style="max-height: 70vh;">
+                <button type="button" class="btn btn-light position-absolute top-50 end-0 translate-middle-y me-2" id="proofLightboxNext" onclick="proofLightboxNav(1)">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php include '../footer.php'; ?>
 
 <script>
 const userRole = '<?php echo $user_role; ?>';
 const isOwner = (userRole === 'Owner');
 let currentInvoiceId = null;
+
+// State bukti pembayaran (upload foto di modal Input Pembayaran)
+let currentPaymentSisa = 0;
+let paymentProofFiles = [];
+const PROOF_MAX_FILES = 5;
+const PROOF_MAX_SIZE = 5 * 1024 * 1024; // 5MB mentah, server akan kompres lagi
+
+// Galeri bukti pembayaran yang sudah tersimpan (untuk lightbox di riwayat pembayaran)
+let proofGalleries = [];
+let proofLightboxState = { urls: [], index: 0 };
 
 $(document).ready(function() {
     loadInvoices();
@@ -406,6 +444,7 @@ function displayInvoiceDetail(inv) {
     
     // Payments table
     let paymentsHtml = '';
+    proofGalleries = [];
     if (inv.payments.length > 0) {
         inv.payments.forEach(function(pay) {
             let updatedAtDisplay = '-';
@@ -419,12 +458,24 @@ function displayInvoiceDetail(inv) {
                 ? '<span class="badge bg-success">Approved</span>'
                 : `<span class="badge bg-secondary">${approvalStatus}</span>`;
 
+            const attachments = pay.attachments || [];
+            let proofHtml = '<span class="text-muted">-</span>';
+            if (attachments.length > 0) {
+                const galleryIdx = proofGalleries.length;
+                proofGalleries.push(attachments.map(a => a.url));
+                proofHtml = attachments.map((a, i) => `
+                    <img src="${a.url}" onclick="openProofLightbox(${galleryIdx}, ${i})" title="Lihat bukti ${i + 1}/${attachments.length}"
+                         style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid #dee2e6;margin:1px;">
+                `).join('');
+            }
+
             paymentsHtml += `
                 <tr>
                     <td>${formatDateTime(pay.tanggal)}</td>
                     <td>Rp ${formatNumber(pay.amount)}</td>
                     <td>${methodLabel}</td>
                     <td>${pay.note || '-'}</td>
+                    <td>${proofHtml}</td>
                     <td>${updatedAtDisplay}</td>
                     <td>
                         ${statusBadge}
@@ -444,7 +495,7 @@ function displayInvoiceDetail(inv) {
             `;
         });
     } else {
-        paymentsHtml = '<tr><td colspan="6" class="text-center text-muted">Belum ada pembayaran</td></tr>';
+        paymentsHtml = '<tr><td colspan="7" class="text-center text-muted">Belum ada pembayaran</td></tr>';
     }
     
     let html = `
@@ -534,6 +585,7 @@ function displayInvoiceDetail(inv) {
                     <th>Jumlah</th>
                     <th>Metode</th>
                     <th>Catatan</th>
+                    <th>Bukti</th>
                     <th>Di Update Pada</th>
                     <th width="10%">Aksi</th>
                 </tr>
@@ -544,11 +596,11 @@ function displayInvoiceDetail(inv) {
             <tfoot>
                 <tr class="table-info">
                     <td><strong>Total Terbayar:</strong></td>
-                    <td colspan="5"><strong>Rp ${formatNumber(inv.total_paid)}</strong></td>
+                    <td colspan="6"><strong>Rp ${formatNumber(inv.total_paid)}</strong></td>
                 </tr>
                 <tr class="table-${inv.sisa_piutang > 0 ? 'warning' : 'success'}">
                     <td><strong>Sisa Piutang:</strong></td>
-                    <td colspan="5"><strong>Rp ${formatNumber(inv.sisa_piutang)}</strong></td>
+                    <td colspan="6"><strong>Rp ${formatNumber(inv.sisa_piutang)}</strong></td>
                 </tr>
             </tfoot>
         </table>
@@ -565,26 +617,96 @@ function displayInvoiceDetail(inv) {
 // Open payment modal
 function openPaymentModal(invoiceId, sisaPiutang) {
     currentInvoiceId = invoiceId;
+    currentPaymentSisa = sisaPiutang;
     $('#payment_invoice_id').val(invoiceId);
     $('#payment_sisa').text('Rp ' + formatNumber(sisaPiutang));
     $('#amount').attr('max', sisaPiutang).val('');
     $('#payment_date').val(new Date().toISOString().split('T')[0]);
     $('#payment_method').val('');
     $('#notes').val('');
+    resetPaymentProof();
     $('#paymentModal').modal('show');
 }
+
+// Reset seluruh state upload bukti pembayaran (dipanggil tiap modal dibuka) — upload opsional, tidak ada minimal
+function resetPaymentProof() {
+    paymentProofFiles.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
+    paymentProofFiles = [];
+    $('#payment_proof_input').val('');
+    $('#payment_proof_preview').empty();
+}
+
+// Render ulang strip thumbnail preview (sebelum upload) dari paymentProofFiles
+function renderPaymentProofPreview() {
+    let $preview = $('#payment_proof_preview');
+    $preview.empty();
+    paymentProofFiles.forEach(function(f, idx) {
+        $preview.append(`
+            <div class="position-relative" style="width:70px;height:70px;">
+                <img src="${f.previewUrl}" style="width:70px;height:70px;object-fit:cover;border-radius:4px;border:1px solid #dee2e6;">
+                <button type="button" class="btn btn-danger btn-sm p-0" onclick="removePaymentProofFile(${idx})"
+                        style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;line-height:18px;border-radius:50%;font-size:11px;">×</button>
+            </div>
+        `);
+    });
+}
+
+// Sinkronkan array paymentProofFiles balik ke <input type="file"> pakai DataTransfer,
+// supaya FormData(form) otomatis ikut ambil file yang tersisa setelah user hapus salah satu.
+function syncPaymentProofInput() {
+    let dt = new DataTransfer();
+    paymentProofFiles.forEach(f => dt.items.add(f.file));
+    document.getElementById('payment_proof_input').files = dt.files;
+}
+
+function removePaymentProofFile(idx) {
+    let removed = paymentProofFiles.splice(idx, 1)[0];
+    if (removed && removed.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+    syncPaymentProofInput();
+    renderPaymentProofPreview();
+}
+
+// User pilih file baru dari file picker (list ini menggantikan seleksi sebelumnya, perilaku standar <input type=file multiple>)
+$(document).on('change', '#payment_proof_input', function() {
+    let rawFiles = Array.from(this.files || []);
+    if (rawFiles.length === 0) return;
+
+    if (rawFiles.length > PROOF_MAX_FILES) {
+        showAlert('danger', `Maksimal ${PROOF_MAX_FILES} foto per pembayaran`);
+        rawFiles = rawFiles.slice(0, PROOF_MAX_FILES);
+    }
+
+    let validFiles = [];
+    for (let file of rawFiles) {
+        if (!file.type.startsWith('image/')) {
+            showAlert('danger', `File "${file.name}" bukan gambar, dilewati`);
+            continue;
+        }
+        if (file.size > PROOF_MAX_SIZE) {
+            showAlert('danger', `File "${file.name}" lebih dari 5MB, dilewati`);
+            continue;
+        }
+        validFiles.push(file);
+    }
+
+    paymentProofFiles.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
+    paymentProofFiles = validFiles.map(file => ({ file: file, previewUrl: URL.createObjectURL(file) }));
+
+    syncPaymentProofInput();
+    renderPaymentProofPreview();
+});
 
 // Submit payment form
 $('#paymentForm').on('submit', function(e) {
     e.preventDefault();
-    
+
     let formData = new FormData(this);
     let selectedMethod = $('#payment_method').val() || 'cash';
     let currentNote = $('#notes').val().trim();
     let finalNote = currentNote;
     formData.set('payment_method', selectedMethod);
     formData.set('notes', finalNote);
-    
+
     $.ajax({
         url: 'backend.php',
         type: 'POST',
@@ -596,7 +718,7 @@ $('#paymentForm').on('submit', function(e) {
                 showAlert('success', response.message);
                 $('#paymentModal').modal('hide');
                 loadInvoices();
-                
+
                 // Jika modal detail terbuka, refresh detail
                 if ($('#detailModal').hasClass('show')) {
                     viewDetail(currentInvoiceId);
@@ -607,6 +729,29 @@ $('#paymentForm').on('submit', function(e) {
         }
     });
 });
+
+// Lightbox bukti pembayaran (sesudah upload, dari riwayat pembayaran)
+function openProofLightbox(galleryIdx, index) {
+    let urls = proofGalleries[galleryIdx] || [];
+    if (urls.length === 0) return;
+    proofLightboxState = { urls: urls, index: index };
+    renderProofLightbox();
+    $('#proofLightboxModal').modal('show');
+}
+
+function proofLightboxNav(delta) {
+    let { urls, index } = proofLightboxState;
+    proofLightboxState.index = (index + delta + urls.length) % urls.length;
+    renderProofLightbox();
+}
+
+function renderProofLightbox() {
+    let { urls, index } = proofLightboxState;
+    $('#proofLightboxImg').attr('src', urls[index]);
+    $('#proofLightboxCounter').text(`Bukti Pembayaran (${index + 1}/${urls.length})`);
+    let multi = urls.length > 1;
+    $('#proofLightboxPrev, #proofLightboxNext').toggle(multi);
+}
 
 // Edit payment - open modal with existing data
 function editPayment(paymentId, invoiceId) {

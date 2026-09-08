@@ -4,6 +4,10 @@ config.php
 # Test & Debug Files Folder
 coba/
 
+# Uploaded payment proof images (runtime data, not source)
+uploads/payments/*
+!uploads/payments/.gitkeep
+
 # Temporary & Generated Files
 *.log
 *.tmp
