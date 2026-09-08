@@ -89,6 +89,113 @@ function ensure_payment_approval_columns(mysqli $conn): void {
     }
 }
 
+function ensure_payment_attachments_table(mysqli $conn): void {
+    $res = mysqli_query($conn, "SHOW TABLES LIKE 'payment_attachments'");
+    if ($res && mysqli_num_rows($res) > 0) {
+        return;
+    }
+    mysqli_query($conn, "
+        CREATE TABLE payment_attachments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            payment_id INT NOT NULL,
+            file_path VARCHAR(255) NOT NULL,
+            file_size INT NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_payment_attachments_payment (payment_id),
+            CONSTRAINT fk_payment_attachments_payment FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB
+    ");
+}
+
+// Folder fisik penyimpanan bukti pembayaran untuk 1 invoice (dibuat otomatis kalau belum ada)
+function payment_attachments_dir(int $invoiceId): string {
+    $dir = __DIR__ . '/../uploads/payments/' . $invoiceId;
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    return $dir;
+}
+
+// Baca file upload mentah, validasi ulang sebagai gambar asli, resize + kompres, simpan sebagai JPEG.
+// Hasil re-encode ini juga jadi lapis keamanan: payload apa pun yang diselipkan di file asli ikut hilang
+// karena yang disimpan adalah gambar baru dari data piksel, bukan salinan byte file upload.
+function payment_attachment_process_upload(string $tmpPath, string $destAbsPath): array {
+    $info = @getimagesize($tmpPath);
+    if ($info === false) {
+        return ['success' => false, 'message' => 'File bukan gambar yang valid'];
+    }
+
+    switch ($info['mime']) {
+        case 'image/jpeg':
+            $src = @imagecreatefromjpeg($tmpPath);
+            break;
+        case 'image/png':
+            $src = @imagecreatefrompng($tmpPath);
+            break;
+        case 'image/webp':
+            $src = function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($tmpPath) : false;
+            break;
+        default:
+            return ['success' => false, 'message' => 'Format gambar tidak didukung (hanya JPG/PNG/WEBP)'];
+    }
+    if (!$src) {
+        return ['success' => false, 'message' => 'Gagal membaca gambar'];
+    }
+
+    $width = imagesx($src);
+    $height = imagesy($src);
+    $maxDim = 1280;
+    if ($width > $maxDim || $height > $maxDim) {
+        $ratio = min($maxDim / $width, $maxDim / $height);
+        $newWidth = max(1, (int) round($width * $ratio));
+        $newHeight = max(1, (int) round($height * $ratio));
+        $resized = imagecreatetruecolor($newWidth, $newHeight);
+        imagecopyresampled($resized, $src, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+        imagedestroy($src);
+        $src = $resized;
+    }
+
+    // Flatten transparansi (PNG/WEBP) ke background putih sebelum di-encode jadi JPEG
+    if (in_array($info['mime'], ['image/png', 'image/webp'], true)) {
+        $w = imagesx($src);
+        $h = imagesy($src);
+        $flat = imagecreatetruecolor($w, $h);
+        $white = imagecolorallocate($flat, 255, 255, 255);
+        imagefill($flat, 0, 0, $white);
+        imagecopy($flat, $src, 0, 0, 0, 0, $w, $h);
+        imagedestroy($src);
+        $src = $flat;
+    }
+
+    $ok = imagejpeg($src, $destAbsPath, 80);
+    imagedestroy($src);
+
+    if (!$ok) {
+        return ['success' => false, 'message' => 'Gagal menyimpan gambar'];
+    }
+    return ['success' => true, 'size' => filesize($destAbsPath)];
+}
+
+// Normalisasi struktur $_FILES['proof'] (multiple file input) jadi list flat per file
+function collect_uploaded_proof_files(): array {
+    $files = [];
+    if (!isset($_FILES['proof']) || !is_array($_FILES['proof']['name'] ?? null)) {
+        return $files;
+    }
+    foreach ($_FILES['proof']['name'] as $idx => $name) {
+        if (($_FILES['proof']['error'][$idx] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            continue;
+        }
+        $files[] = [
+            'name' => $name,
+            'tmp_name' => $_FILES['proof']['tmp_name'][$idx],
+            'error' => $_FILES['proof']['error'][$idx],
+            'size' => $_FILES['proof']['size'][$idx],
+        ];
+    }
+    return $files;
+}
+
 function approved_payment_where_clause(bool $hasApprovalCols, string $alias = 'p'): string {
     if (!$hasApprovalCols) {
         return '';
@@ -147,6 +254,7 @@ function recalc_invoice_status(mysqli $conn, int $invoiceId, bool $hasApprovalCo
 ensure_payment_approval_columns($conn);
 ensure_invoice_user_column($conn);
 ensure_invoice_status_enum($conn);
+ensure_payment_attachments_table($conn);
 $paymentApprovalColRes = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE 'approval_status'");
 $hasPaymentApprovalCols = $paymentApprovalColRes && mysqli_num_rows($paymentApprovalColRes) > 0;
 
@@ -403,6 +511,28 @@ elseif ($action === 'read_one') {
             }
             $payments[] = $payment;
         }
+
+        // Ambil bukti pembayaran (bisa lebih dari 1 foto per payment) dalam 1 query
+        if (!empty($payments)) {
+            $paymentIds = [];
+            foreach ($payments as $p) {
+                $paymentIds[] = (int)$p['id'];
+            }
+            $sql_att = "SELECT id, payment_id, file_path FROM payment_attachments WHERE payment_id IN (" . implode(',', $paymentIds) . ") ORDER BY id";
+            $result_att = mysqli_query($conn, $sql_att);
+            $attByPayment = [];
+            while ($att = mysqli_fetch_assoc($result_att)) {
+                $attByPayment[$att['payment_id']][] = [
+                    'id' => (int)$att['id'],
+                    'url' => '../uploads/' . $att['file_path'],
+                ];
+            }
+            foreach ($payments as &$p) {
+                $p['attachments'] = $attByPayment[$p['id']] ?? [];
+            }
+            unset($p);
+        }
+
         $row['payments'] = $payments;
         $row['total_paid'] = $total_paid;
         $row['sisa_piutang'] = $row['total'] - $total_paid;
@@ -462,7 +592,34 @@ elseif ($action === 'create_payment') {
         echo json_encode(['success' => false, 'message' => "Jumlah pembayaran melebihi sisa piutang (Rp " . number_format($sisa, 0, ',', '.') . ")"]);
         exit;
     }
-    
+
+    // Bukti pembayaran opsional (boleh 0 foto), tapi kalau upload tetap dibatasi jumlah/ukuran/tipe
+    $proofFiles = collect_uploaded_proof_files();
+    $maxPhotos = 5;
+    $maxFileSize = 5 * 1024 * 1024;
+
+    if (count($proofFiles) > $maxPhotos) {
+        echo json_encode(['success' => false, 'message' => "Maksimal $maxPhotos foto per pembayaran"]);
+        exit;
+    }
+    foreach ($proofFiles as $f) {
+        if ($f['error'] !== UPLOAD_ERR_OK) {
+            echo json_encode(['success' => false, 'message' => 'Upload gagal untuk file: ' . $f['name']]);
+            exit;
+        }
+        if ($f['size'] > $maxFileSize) {
+            echo json_encode(['success' => false, 'message' => 'Ukuran file maksimal 5MB: ' . $f['name']]);
+            exit;
+        }
+        $imgInfo = @getimagesize($f['tmp_name']);
+        if ($imgInfo === false || !in_array($imgInfo['mime'], ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            echo json_encode(['success' => false, 'message' => 'File harus berupa gambar JPG/PNG/WEBP: ' . $f['name']]);
+            exit;
+        }
+    }
+
+    $savedAttachmentPaths = [];
+
     mysqli_begin_transaction($conn);
     try {
         // Admin/Owner: langsung apply ke keuangan tanpa approval.
@@ -506,12 +663,34 @@ elseif ($action === 'create_payment') {
 
         $payment_id = mysqli_insert_id($conn);
 
+        // Resize + kompres tiap foto, simpan ke disk, catat path-nya di DB
+        $attachmentUrls = [];
+        $uploadDir = payment_attachments_dir($invoice_id);
+        foreach ($proofFiles as $idx => $f) {
+            $filename = 'pay' . $payment_id . '_' . ($idx + 1) . '_' . bin2hex(random_bytes(4)) . '.jpg';
+            $destAbsPath = $uploadDir . '/' . $filename;
+
+            $proc = payment_attachment_process_upload($f['tmp_name'], $destAbsPath);
+            if (!$proc['success']) {
+                throw new Exception($proc['message']);
+            }
+            $savedAttachmentPaths[] = $destAbsPath;
+
+            $relPath = "payments/$invoice_id/$filename";
+            $escRelPath = mysqli_real_escape_string($conn, $relPath);
+            $fileSize = (int)$proc['size'];
+            if (!mysqli_query($conn, "INSERT INTO payment_attachments (payment_id, file_path, file_size, created_at) VALUES ($payment_id, '$escRelPath', $fileSize, NOW())")) {
+                throw new Exception('Gagal menyimpan data bukti pembayaran: ' . mysqli_error($conn));
+            }
+            $attachmentUrls[] = '../uploads/' . $relPath;
+        }
+
         $recalc = recalc_invoice_status($conn, $invoice_id, $hasPaymentApprovalCols);
         if (!$recalc['success']) {
             throw new Exception($recalc['message']);
         }
 
-        $log_msg = "Pembayaran Rp " . number_format($amount, 0, ',', '.') . " untuk Invoice #$invoice_id via $method (langsung tercatat)";
+        $log_msg = "Pembayaran Rp " . number_format($amount, 0, ',', '.') . " untuk Invoice #$invoice_id via $method (langsung tercatat, " . count($proofFiles) . " foto bukti)";
         mysqli_query($conn, "INSERT INTO audit_logs (user_id, action, target_table, target_id, description, created_at)
                             VALUES ({$_SESSION['user_id']}, 'CREATE', 'payments', $payment_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())");
 
@@ -522,10 +701,14 @@ elseif ($action === 'create_payment') {
             'message' => 'Pembayaran berhasil dicatat',
             'new_status' => $recalc['status'],
             'new_total_paid' => $recalc['total_paid'],
-            'new_sisa' => $recalc['sisa']
+            'new_sisa' => $recalc['sisa'],
+            'attachments' => $attachmentUrls
         ]);
     } catch (Exception $e) {
         mysqli_rollback($conn);
+        foreach ($savedAttachmentPaths as $p) {
+            @unlink($p);
+        }
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
 }
@@ -724,7 +907,15 @@ elseif ($action === 'delete_payment') {
         exit;
     }
 
-    
+    // Ambil path file bukti pembayaran dulu (row-nya ikut terhapus otomatis lewat FK CASCADE saat payment dihapus)
+    $attachmentsToDelete = [];
+    $qAtt = mysqli_query($conn, "SELECT file_path FROM payment_attachments WHERE payment_id = $payment_id");
+    if ($qAtt) {
+        while ($attRow = mysqli_fetch_assoc($qAtt)) {
+            $attachmentsToDelete[] = __DIR__ . '/../uploads/' . $attRow['file_path'];
+        }
+    }
+
     mysqli_begin_transaction($conn);
     try {
         $qPayMeta = mysqli_query($conn, "SELECT finance_tx_id, finance_amount FROM payments WHERE id = $payment_id LIMIT 1");
@@ -772,7 +963,12 @@ elseif ($action === 'delete_payment') {
         mysqli_query($conn, $sql_log);
 
         mysqli_commit($conn);
-        
+
+        // Hapus file fisik setelah DB commit sukses (kalau rollback, file lama tetap ada karena baris DB-nya juga tidak jadi terhapus)
+        foreach ($attachmentsToDelete as $path) {
+            @unlink($path);
+        }
+
         echo json_encode(['success' => true, 'message' => 'Pembayaran berhasil dihapus']);
     } catch (Exception $e) {
         mysqli_rollback($conn);
